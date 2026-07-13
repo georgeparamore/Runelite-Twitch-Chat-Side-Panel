@@ -39,6 +39,17 @@ Logs in with your own RuneLite account; enable "Twitch Chat Side Panel" in the p
 
 ## Status
 
-v1. Not yet verified against a real RuneLite client - built from spec, needs a live test
-pass (connect/disconnect, long-running sessions, very high chat volume, emote-heavy
-messages, channel names with unusual casing).
+v1. Verified against a real RuneLite client running headlessly (Xvfb): the plugin
+registers cleanly, the side panel opens and renders (title, channel field, Connect
+button, status line, message feed), and the connect flow works end-to-end up to the
+network boundary - clicking Connect drives the background IRC client through socket
+setup and the error path correctly (confirmed via a forced timeout, since that sandbox
+had no outbound TCP access to Twitch). That test also caught and fixed a real bug: the
+original `SSLSocketFactory.createSocket(host, port)` call had no connect timeout, so an
+unreachable network would leave the panel stuck on "Connecting..." forever - it now
+connects a plain `Socket` with an explicit 10s timeout first, then upgrades to TLS.
+
+**Not yet verified**: an actual successful connection to live Twitch chat and message
+rendering (needs a network that can reach `irc.chat.twitch.tv:6697`), long-running
+sessions, very high chat volume, emote-heavy messages, channel names with unusual
+casing.

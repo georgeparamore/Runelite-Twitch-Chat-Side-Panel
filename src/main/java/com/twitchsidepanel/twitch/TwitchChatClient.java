@@ -5,6 +5,8 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.HashMap;
@@ -24,6 +26,11 @@ public class TwitchChatClient
 {
 	private static final String HOST = "irc.chat.twitch.tv";
 	private static final int PORT = 6697;
+	// The plain createSocket(host, port) overload blocks on the OS's default TCP connect
+	// timeout (can be 60s+), leaving the panel stuck on "Connecting..." with no feedback
+	// if Twitch is unreachable. Connecting a plain socket first with an explicit timeout,
+	// then upgrading it to TLS, bounds that wait and lets a real error reach the user.
+	private static final int CONNECT_TIMEOUT_MS = 10_000;
 
 	private final TwitchChatListener listener;
 	private volatile SSLSocket socket;
@@ -59,8 +66,11 @@ public class TwitchChatClient
 	{
 		try
 		{
+			Socket rawSocket = new Socket();
+			rawSocket.connect(new InetSocketAddress(HOST, PORT), CONNECT_TIMEOUT_MS);
+
 			SSLSocketFactory factory = (SSLSocketFactory) SSLSocketFactory.getDefault();
-			socket = (SSLSocket) factory.createSocket(HOST, PORT);
+			socket = (SSLSocket) factory.createSocket(rawSocket, HOST, PORT, true);
 			socket.setSoTimeout(0);
 
 			OutputStream out = socket.getOutputStream();
