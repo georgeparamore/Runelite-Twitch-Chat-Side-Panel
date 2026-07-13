@@ -1,13 +1,18 @@
 package com.twitchsidepanel;
 
 import com.google.inject.Provides;
+import com.twitchsidepanel.twitch.EmoteImageCache;
 import com.twitchsidepanel.twitch.TwitchChatClient;
 import com.twitchsidepanel.twitch.TwitchChatListener;
 import com.twitchsidepanel.twitch.TwitchMessage;
 import com.twitchsidepanel.ui.TwitchPanelIcon;
 import com.twitchsidepanel.ui.TwitchSidePanel;
 import java.awt.image.BufferedImage;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import javax.inject.Inject;
+import javax.swing.ImageIcon;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.eventbus.Subscribe;
@@ -43,6 +48,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 	private TwitchSidePanel panel;
 	private NavigationButton navButton;
 	private TwitchChatClient chatClient;
+	private final EmoteImageCache emoteImageCache = new EmoteImageCache();
 
 	@Provides
 	TwitchSidePanelConfig getConfig(final ConfigManager configManager)
@@ -145,6 +151,24 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 		{
 			return;
 		}
-		panel.appendMessage(message, config.colorUsernames(), config.showTimestamps(), config.maxMessages());
+
+		// Fetching runs here (on the WebSocket listener's background thread, not the
+		// Swing EDT) so the UI thread never blocks on network I/O - only cache misses
+		// pay the fetch cost, every repeat use of an emote is instant afterwards.
+		Map<String, ImageIcon> emoteIcons = new HashMap<>();
+		for (TwitchMessage.EmoteRef emote : message.emotes)
+		{
+			if (!emoteIcons.containsKey(emote.id))
+			{
+				ImageIcon icon = emoteImageCache.get(emote.id);
+				if (icon != null)
+				{
+					emoteIcons.put(emote.id, icon);
+				}
+			}
+		}
+
+		panel.appendMessage(message, config.colorUsernames(), config.showTimestamps(), config.maxMessages(),
+			emoteIcons, Collections.emptyMap());
 	}
 }

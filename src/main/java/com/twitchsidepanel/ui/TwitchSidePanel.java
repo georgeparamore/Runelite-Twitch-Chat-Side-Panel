@@ -4,9 +4,11 @@ import com.twitchsidepanel.twitch.TwitchMessage;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
+import java.util.Map;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.ImageIcon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -158,11 +160,13 @@ public class TwitchSidePanel extends PluginPanel
 		});
 	}
 
-	public void appendMessage(TwitchMessage message, boolean colorUsernames, boolean showTimestamps, int maxMessages)
+	public void appendMessage(TwitchMessage message, boolean colorUsernames, boolean showTimestamps, int maxMessages,
+		Map<String, ImageIcon> emoteIcons, Map<String, ImageIcon> badgeIcons)
 	{
 		SwingUtilities.invokeLater(() ->
 		{
-			ChatMessageRowPanel row = new ChatMessageRowPanel(message, colorUsernames, showTimestamps);
+			ChatMessageRowPanel row = new ChatMessageRowPanel(message, colorUsernames, showTimestamps,
+				emoteIcons, badgeIcons);
 			row.setBorder(BorderFactory.createCompoundBorder(
 				BorderFactory.createEmptyBorder(0, 0, 4, 0),
 				row.getBorder()));

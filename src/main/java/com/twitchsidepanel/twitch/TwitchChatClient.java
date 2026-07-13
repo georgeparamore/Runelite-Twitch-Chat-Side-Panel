@@ -6,19 +6,24 @@ import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.security.SecureRandom;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletionStage;
 
 /**
- * Minimal read-only Twitch IRC client, over WebSocket rather than raw IRC sockets so it
- * still works on networks that only allow outbound HTTPS (hotel wifi, corporate proxies,
- * etc). Connects anonymously (Twitch allows reading chat without an OAuth token as long
- * as you never try to send a message, using a "justinfan" throwaway nick) and requests
- * the IRCv3 "tags" capability so each message carries the sender's chosen display name
- * and name color.
+ * Twitch IRC client, over WebSocket rather than raw IRC sockets so it still works on
+ * networks that only allow outbound HTTPS (hotel wifi, corporate proxies, etc).
  * <p>
- * This never sends chat messages on the user's behalf - it only reads.
+ * Without a login (see {@link #connect(String)}), this connects anonymously using a
+ * "justinfan" throwaway nick - Twitch allows this for read-only access, but a message
+ * can never be sent on such a connection. With a login (see
+ * {@link #connectAuthenticated(String, String, String)}), it authenticates as the real
+ * account so {@link #sendMessage(String)} can post to chat.
+ * <p>
+ * Either way it requests the IRCv3 "tags" capability so each message carries the
+ * sender's chosen display name, name color, badges, and emotes.
  */
 public class TwitchChatClient
 {
@@ -32,6 +37,7 @@ public class TwitchChatClient
 
 	private volatile WebSocket webSocket;
 	private volatile boolean stopRequested;
+	private volatile String currentChannel;
 
 	public TwitchChatClient(TwitchChatListener listener)
 	{
@@ -39,17 +45,32 @@ public class TwitchChatClient
 	}
 
 	/**
-	 * Connects and joins the given channel asynchronously. Safe to call from the Swing
-	 * EDT. {@code channel} may be typed with or without a leading '#' and in any case.
+	 * Connects anonymously (read-only) and joins the given channel. Safe to call from the
+	 * Swing EDT. {@code channel} may be typed with or without a leading '#' and in any case.
 	 */
 	public void connect(String channel)
 	{
+		doConnect(channel, null, null);
+	}
+
+	/**
+	 * Connects authenticated as {@code nick} using an OAuth access token (chat:read
+	 * chat:edit scopes), enabling {@link #sendMessage(String)} on this connection.
+	 */
+	public void connectAuthenticated(String channel, String nick, String oauthAccessToken)
+	{
+		doConnect(channel, nick, oauthAccessToken);
+	}
+
+	private void doConnect(String channel, String nick, String oauthAccessToken)
+	{
 		String normalizedChannel = normalizeChannel(channel);
+		currentChannel = normalizedChannel;
 		stopRequested = false;
 
 		httpClient.newWebSocketBuilder()
 			.connectTimeout(CONNECT_TIMEOUT)
-			.buildAsync(ENDPOINT, new IrcListener(normalizedChannel))
+			.buildAsync(ENDPOINT, new IrcListener(normalizedChannel, nick, oauthAccessToken))
 			.exceptionally(error ->
 			{
 				if (!stopRequested)
@@ -58,6 +79,22 @@ public class TwitchChatClient
 				}
 				return null;
 			});
+	}
+
+	/**
+	 * Sends a chat message to the currently connected channel. No-op if not connected on
+	 * an authenticated connection. Never called automatically by this plugin - only in
+	 * direct response to the user typing a message and pressing send.
+	 */
+	public void sendMessage(String text)
+	{
+		WebSocket ws = webSocket;
+		String channel = currentChannel;
+		if (ws == null || channel == null || text == null || text.trim().isEmpty())
+		{
+			return;
+		}
+		ws.sendText("PRIVMSG #" + channel + " :" + text.trim(), true);
 	}
 
 	public void disconnect()
@@ -73,11 +110,15 @@ public class TwitchChatClient
 	private class IrcListener implements WebSocket.Listener
 	{
 		private final String channel;
+		private final String nick;
+		private final String oauthAccessToken;
 		private final StringBuilder frameBuffer = new StringBuilder();
 
-		IrcListener(String channel)
+		IrcListener(String channel, String nick, String oauthAccessToken)
 		{
 			this.channel = channel;
+			this.nick = nick;
+			this.oauthAccessToken = oauthAccessToken;
 		}
 
 		@Override
@@ -85,12 +126,23 @@ public class TwitchChatClient
 		{
 			webSocket = ws;
 
-			// Twitch allows read-only IRC access with no OAuth token at all, as long as
-			// the nick follows the "justinfanNNNNN" convention reserved for anonymous
-			// viewers. Each WebSocket text frame is one IRC command - no trailing CRLF.
-			String anonymousNick = "justinfan" + (10000 + new SecureRandom().nextInt(90000));
+			// Each WebSocket text frame is one IRC command - no trailing CRLF needed.
 			ws.sendText("CAP REQ :twitch.tv/tags twitch.tv/commands", true);
-			ws.sendText("NICK " + anonymousNick, true);
+
+			if (oauthAccessToken != null && nick != null)
+			{
+				ws.sendText("PASS oauth:" + oauthAccessToken, true);
+				ws.sendText("NICK " + nick.toLowerCase(), true);
+			}
+			else
+			{
+				// Twitch allows read-only IRC access with no OAuth token at all, as long
+				// as the nick follows the "justinfanNNNNN" convention reserved for
+				// anonymous viewers.
+				String anonymousNick = "justinfan" + (10000 + new SecureRandom().nextInt(90000));
+				ws.sendText("NICK " + anonymousNick, true);
+			}
+
 			ws.sendText("JOIN #" + channel, true);
 
 			WebSocket.Listener.super.onOpen(ws);
@@ -143,6 +195,12 @@ public class TwitchChatClient
 		if (line.startsWith("PING"))
 		{
 			ws.sendText("PONG :tmi.twitch.tv", true);
+			return;
+		}
+
+		if (line.contains("NOTICE") && (line.contains("Login authentication failed") || line.contains("Improperly formatted auth")))
+		{
+			listener.onDisconnected("Twitch rejected the login - try logging in again");
 			return;
 		}
 
@@ -209,8 +267,74 @@ public class TwitchChatClient
 		}
 
 		Color color = parseColor(tags.get("color"));
+		List<TwitchMessage.BadgeRef> badges = parseBadges(tags.get("badges"));
+		List<TwitchMessage.EmoteRef> emotes = parseEmotes(tags.get("emotes"));
 
-		return new TwitchMessage(displayName, body, color, System.currentTimeMillis());
+		return new TwitchMessage(displayName, body, color, System.currentTimeMillis(), badges, emotes);
+	}
+
+	/**
+	 * Parses the {@code badges} tag, e.g. {@code subscriber/12,moderator/1}.
+	 */
+	private List<TwitchMessage.BadgeRef> parseBadges(String raw)
+	{
+		List<TwitchMessage.BadgeRef> badges = new ArrayList<>();
+		if (raw == null || raw.isEmpty())
+		{
+			return badges;
+		}
+		for (String entry : raw.split(","))
+		{
+			int slash = entry.indexOf('/');
+			if (slash > 0)
+			{
+				badges.add(new TwitchMessage.BadgeRef(entry.substring(0, slash), entry.substring(slash + 1)));
+			}
+		}
+		return badges;
+	}
+
+	/**
+	 * Parses the {@code emotes} tag, e.g. {@code 25:0-4,12-16/1902:6-10} - each entry is
+	 * an emote id followed by one or more start-end character ranges where it appears.
+	 */
+	private List<TwitchMessage.EmoteRef> parseEmotes(String raw)
+	{
+		List<TwitchMessage.EmoteRef> emotes = new ArrayList<>();
+		if (raw == null || raw.isEmpty())
+		{
+			return emotes;
+		}
+		for (String entry : raw.split("/"))
+		{
+			int colon = entry.indexOf(':');
+			if (colon <= 0)
+			{
+				continue;
+			}
+			String id = entry.substring(0, colon);
+			for (String range : entry.substring(colon + 1).split(","))
+			{
+				int dash = range.indexOf('-');
+				if (dash <= 0)
+				{
+					continue;
+				}
+				try
+				{
+					int start = Integer.parseInt(range.substring(0, dash));
+					int end = Integer.parseInt(range.substring(dash + 1));
+					emotes.add(new TwitchMessage.EmoteRef(id, start, end));
+				}
+				catch (NumberFormatException ignored)
+				{
+					// Malformed range from a source we don't control - skip it rather
+					// than fail the whole message.
+				}
+			}
+		}
+		emotes.sort((a, b) -> Integer.compare(a.start, b.start));
+		return emotes;
 	}
 
 	private String extractNickFromPrefix(String prefixSection)
