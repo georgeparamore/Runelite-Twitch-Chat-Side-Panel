@@ -68,6 +68,13 @@ authorized, the same WebSocket connection is upgraded to log in as the real acco
 (`PASS oauth:<token>` / real nick instead of `justinfanNNNNN`), which is what allows
 `sendMessage()` to actually post to chat.
 
+**Badge icons**: badge *names* (subscriber, moderator, vip, ...) arrive over IRC for every
+message regardless of login state, but turning those into actual icon images needs an
+authenticated Helix API call (`GET /helix/chat/badges/global` and
+`/helix/chat/badges?broadcaster_id=...`), so icons only render once you're logged in - see
+`BadgeIconCache`. A failed/missing badge icon never breaks the message, it just renders
+without one.
+
 ## Building / running locally
 
 ```
@@ -100,13 +107,17 @@ This live testing caught and fixed two real bugs before they reached anyone:
    its own internal `DynamicGridLayout` + `JScrollPane`, which silently conflicted with
    this panel's own layout. Fixed by calling `super(false)` to opt out of that wrapping.
 
+Badge icon plumbing (Helix calls, icon fetch/scale/cache) is built and passes a
+regression test with no credentials configured (silently renders no icons rather than
+breaking chat, as designed) - see `BadgeIconCache`.
+
 **Not yet verified** (needs a real Twitch app Client ID, which this sandbox doesn't have):
 
 - An actual successful login (the device-code request/error path works; the happy path
   where Twitch approves the code has not been exercised).
 - Sending a real message end-to-end.
-- Badge icons (planned, not yet built - badge *names* already arrive over IRC even
-  anonymously, but rendering them as icons needs an authenticated Helix API call).
+- Badge icons actually rendering (the no-credentials fallback path is verified; the
+  real Helix fetch is not).
 - Sub/gift carousel (planned, not yet built - needs Twitch's EventSub, a separate
   real-time system from IRC).
 - Long-running sessions (hours), very high sustained chat volume, non-Latin channel

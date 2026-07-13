@@ -1,6 +1,7 @@
 package com.twitchsidepanel;
 
 import com.google.inject.Provides;
+import com.twitchsidepanel.twitch.BadgeIconCache;
 import com.twitchsidepanel.twitch.EmoteImageCache;
 import com.twitchsidepanel.twitch.TwitchAuthService;
 import com.twitchsidepanel.twitch.TwitchChatClient;
@@ -9,7 +10,6 @@ import com.twitchsidepanel.twitch.TwitchMessage;
 import com.twitchsidepanel.ui.TwitchPanelIcon;
 import com.twitchsidepanel.ui.TwitchSidePanel;
 import java.awt.image.BufferedImage;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import javax.inject.Inject;
@@ -54,6 +54,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 	private NavigationButton navButton;
 	private TwitchChatClient chatClient;
 	private final EmoteImageCache emoteImageCache = new EmoteImageCache();
+	private final BadgeIconCache badgeIconCache = new BadgeIconCache();
 	private final TwitchAuthService authService = new TwitchAuthService();
 
 	@Provides
@@ -189,6 +190,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 				{
 					panel.showLoggedIn(username);
 				}
+				loadBadgeIcons(clientId, accessToken);
 			}
 
 			@Override
@@ -224,6 +226,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 			{
 				configManager.setConfiguration(CONFIG_GROUP, "loggedInUsername", username);
 				panel.showLoggedIn(username);
+				loadBadgeIcons(config.clientId().trim(), accessToken);
 			}
 			else
 			{
@@ -231,6 +234,19 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 				panel.showLoginPrompt();
 			}
 		}, "twitch-token-validate");
+		thread.setDaemon(true);
+		thread.start();
+	}
+
+	private void loadBadgeIcons(String clientId, String accessToken)
+	{
+		String channel = config.channel().trim();
+		if (clientId.isEmpty() || channel.isEmpty())
+		{
+			return;
+		}
+		Thread thread = new Thread(() -> badgeIconCache.loadForChannel(clientId, accessToken, channel),
+			"twitch-badge-icons");
 		thread.setDaemon(true);
 		thread.start();
 	}
@@ -296,7 +312,21 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 			}
 		}
 
+		Map<String, ImageIcon> badgeIcons = new HashMap<>();
+		for (TwitchMessage.BadgeRef badge : message.badges)
+		{
+			String key = badge.setId + "/" + badge.version;
+			if (!badgeIcons.containsKey(key))
+			{
+				ImageIcon icon = badgeIconCache.get(badge.setId, badge.version);
+				if (icon != null)
+				{
+					badgeIcons.put(key, icon);
+				}
+			}
+		}
+
 		panel.appendMessage(message, config.colorUsernames(), config.showTimestamps(), config.maxMessages(),
-			emoteIcons, Collections.emptyMap());
+			emoteIcons, badgeIcons);
 	}
 }
