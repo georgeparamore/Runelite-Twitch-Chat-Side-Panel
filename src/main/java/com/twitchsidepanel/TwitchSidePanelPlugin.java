@@ -2,6 +2,7 @@ package com.twitchsidepanel;
 
 import com.google.inject.Provides;
 import com.twitchsidepanel.twitch.EmoteImageCache;
+import com.twitchsidepanel.twitch.TwitchAuthService;
 import com.twitchsidepanel.twitch.TwitchChatClient;
 import com.twitchsidepanel.twitch.TwitchChatListener;
 import com.twitchsidepanel.twitch.TwitchMessage;
@@ -23,11 +24,12 @@ import net.runelite.client.ui.NavigationButton;
 
 /**
  * Shows your Twitch channel's live chat in a RuneLite side panel, Party-Hub style,
- * instead of the official Twitch plugin's chatbox-PM format. Read-only: it only displays
- * chat, it never sends messages or otherwise acts on the streamer's or viewers' behalf.
+ * instead of the official Twitch plugin's chatbox-PM format.
  * <p>
  * Only ever connects to the channel set in this plugin's config (your own channel) - it
- * cannot be pointed at an arbitrary Twitch channel from the panel itself.
+ * cannot be pointed at an arbitrary Twitch channel from the panel itself. Reading chat
+ * works anonymously with no login; logging in with Twitch (device code flow) additionally
+ * unlocks sending messages as yourself.
  */
 @PluginDescriptor(
 	name = "Twitch Chat Side Panel",
@@ -45,10 +47,14 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 	@Inject
 	private TwitchSidePanelConfig config;
 
+	@Inject
+	private ConfigManager configManager;
+
 	private TwitchSidePanel panel;
 	private NavigationButton navButton;
 	private TwitchChatClient chatClient;
 	private final EmoteImageCache emoteImageCache = new EmoteImageCache();
+	private final TwitchAuthService authService = new TwitchAuthService();
 
 	@Provides
 	TwitchSidePanelConfig getConfig(final ConfigManager configManager)
@@ -66,9 +72,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 			@Override
 			public void onConnectClicked()
 			{
-				String channel = config.channel().trim();
-				panel.setStatus("Connecting to #" + channel + "...", false);
-				chatClient.connect(channel);
+				connectToChannel();
 			}
 
 			@Override
@@ -77,6 +81,31 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 				chatClient.disconnect();
 				panel.setConnected(false);
 				panel.setStatus("Not connected", false);
+			}
+
+			@Override
+			public void onLoginClicked()
+			{
+				startLogin();
+			}
+
+			@Override
+			public void onCancelLoginClicked()
+			{
+				authService.cancel();
+			}
+
+			@Override
+			public void onLogoutClicked()
+			{
+				clearLogin();
+				panel.showLoginPrompt();
+			}
+
+			@Override
+			public void onSendMessage(String text)
+			{
+				chatClient.sendMessage(text);
 			}
 		}, config.channel());
 
@@ -91,17 +120,18 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 
 		clientToolbar.addNavigation(navButton);
 
+		restoreLoginState();
+
 		if (config.autoConnect() && !config.channel().trim().isEmpty())
 		{
-			String channel = config.channel().trim();
-			panel.setStatus("Connecting to #" + channel + "...", false);
-			chatClient.connect(channel);
+			connectToChannel();
 		}
 	}
 
 	@Override
 	protected void shutDown()
 	{
+		authService.cancel();
 		if (chatClient != null)
 		{
 			chatClient.disconnect();
@@ -111,6 +141,104 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 			clientToolbar.removeNavigation(navButton);
 		}
 		panel = null;
+	}
+
+	private void connectToChannel()
+	{
+		String channel = config.channel().trim();
+		panel.setStatus("Connecting to #" + channel + "...", false);
+
+		String accessToken = config.accessToken();
+		String username = config.loggedInUsername();
+		if (!accessToken.isEmpty() && !username.isEmpty())
+		{
+			chatClient.connectAuthenticated(channel, username, accessToken);
+		}
+		else
+		{
+			chatClient.connect(channel);
+		}
+	}
+
+	private void startLogin()
+	{
+		String clientId = config.clientId().trim();
+		if (clientId.isEmpty())
+		{
+			panel.showLoginError("Set your Twitch app Client ID in the plugin settings first");
+			return;
+		}
+
+		authService.startLogin(clientId, new TwitchAuthService.LoginListener()
+		{
+			@Override
+			public void onCodeReady(String userCode, String verificationUri)
+			{
+				if (panel != null)
+				{
+					panel.showDeviceCode(userCode, verificationUri);
+				}
+			}
+
+			@Override
+			public void onAuthorized(String accessToken, String username)
+			{
+				configManager.setConfiguration(CONFIG_GROUP, "accessToken", accessToken);
+				configManager.setConfiguration(CONFIG_GROUP, "loggedInUsername", username);
+				if (panel != null)
+				{
+					panel.showLoggedIn(username);
+				}
+			}
+
+			@Override
+			public void onError(String message)
+			{
+				if (panel != null)
+				{
+					panel.showLoginError(message);
+				}
+			}
+		});
+	}
+
+	private void restoreLoginState()
+	{
+		String accessToken = config.accessToken();
+		if (accessToken.isEmpty())
+		{
+			panel.showLoginPrompt();
+			return;
+		}
+
+		// Validating blocks on a network call - run it off the startUp() thread so
+		// plugin startup itself never stalls waiting on Twitch.
+		Thread thread = new Thread(() ->
+		{
+			String username = authService.validateToken(accessToken);
+			if (panel == null)
+			{
+				return;
+			}
+			if (username != null)
+			{
+				configManager.setConfiguration(CONFIG_GROUP, "loggedInUsername", username);
+				panel.showLoggedIn(username);
+			}
+			else
+			{
+				clearLogin();
+				panel.showLoginPrompt();
+			}
+		}, "twitch-token-validate");
+		thread.setDaemon(true);
+		thread.start();
+	}
+
+	private void clearLogin()
+	{
+		configManager.unsetConfiguration(CONFIG_GROUP, "accessToken");
+		configManager.unsetConfiguration(CONFIG_GROUP, "loggedInUsername");
 	}
 
 	@Subscribe

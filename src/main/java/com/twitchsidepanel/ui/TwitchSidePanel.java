@@ -12,6 +12,7 @@ import javax.swing.ImageIcon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import net.runelite.client.ui.PluginPanel;
 
@@ -20,6 +21,9 @@ import net.runelite.client.ui.PluginPanel;
  * of the official Twitch plugin's chatbox-PM format. Only ever connects to the channel
  * configured in the plugin's settings (your own channel) - there is no way to type in and
  * join an arbitrary channel from the panel itself.
+ * <p>
+ * Reading chat works with no login. Logging in with Twitch (device code flow) additionally
+ * unlocks sending messages.
  */
 public class TwitchSidePanel extends PluginPanel
 {
@@ -28,6 +32,21 @@ public class TwitchSidePanel extends PluginPanel
 		void onConnectClicked();
 
 		void onDisconnectClicked();
+
+		void onLoginClicked();
+
+		void onCancelLoginClicked();
+
+		void onLogoutClicked();
+
+		void onSendMessage(String text);
+	}
+
+	private enum AuthState
+	{
+		LOGGED_OUT,
+		WAITING_FOR_CODE,
+		LOGGED_IN
 	}
 
 	private static final Color BACKGROUND = new Color(0x1b, 0x18, 0x24);
@@ -36,12 +55,18 @@ public class TwitchSidePanel extends PluginPanel
 	private final JLabel channelLabel;
 	private final PillButton connectButton;
 	private final JLabel statusLabel;
+	private final JLabel authStatusLabel;
+	private final PillButton authButton;
 	private final JPanel messageListPanel;
 	private final JScrollPane scrollPane;
+	private final JTextField messageField;
+	private final PillButton sendButton;
+	private final JPanel sendRow;
 
 	private final Handlers handlers;
 	private boolean connected;
 	private boolean channelConfigured;
+	private AuthState authState = AuthState.LOGGED_OUT;
 
 	public TwitchSidePanel(Handlers handlers, String channel)
 	{
@@ -88,10 +113,27 @@ public class TwitchSidePanel extends PluginPanel
 		statusLabel.setAlignmentX(LEFT_ALIGNMENT);
 		statusLabel.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0));
 
+		JPanel authRow = new JPanel(new BorderLayout(6, 0));
+		authRow.setBackground(BACKGROUND);
+		authRow.setAlignmentX(LEFT_ALIGNMENT);
+		authRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+		authRow.setBorder(BorderFactory.createEmptyBorder(6, 0, 0, 0));
+
+		authStatusLabel = new JLabel("Not logged in");
+		authStatusLabel.setForeground(Color.LIGHT_GRAY);
+		authStatusLabel.setFont(authStatusLabel.getFont().deriveFont(11f));
+
+		authButton = new PillButton("Log in with Twitch", new Color(0x6a, 0x3d, 0xc7), new Color(0x81, 0x54, 0xdd));
+		authButton.addActionListener(e -> handleAuthButton());
+
+		authRow.add(authStatusLabel, BorderLayout.CENTER);
+		authRow.add(authButton, BorderLayout.EAST);
+
 		header.add(title);
 		header.add(Box.createVerticalStrut(8));
 		header.add(connectRow);
 		header.add(statusLabel);
+		header.add(authRow);
 
 		messageListPanel = new JPanel();
 		messageListPanel.setLayout(new BoxLayout(messageListPanel, BoxLayout.Y_AXIS));
@@ -103,8 +145,24 @@ public class TwitchSidePanel extends PluginPanel
 		scrollPane.getViewport().setBackground(BACKGROUND);
 		scrollPane.getVerticalScrollBar().setUnitIncrement(16);
 
+		sendRow = new JPanel(new BorderLayout(6, 0));
+		sendRow.setBackground(BACKGROUND);
+		sendRow.setBorder(BorderFactory.createEmptyBorder(8, 10, 10, 10));
+		sendRow.setVisible(false);
+
+		messageField = new JTextField();
+		messageField.setToolTipText("Send a message");
+		messageField.addActionListener(e -> handleSend());
+
+		sendButton = new PillButton("Chat", new Color(0x91, 0x46, 0xff), new Color(0xa8, 0x6c, 0xff));
+		sendButton.addActionListener(e -> handleSend());
+
+		sendRow.add(messageField, BorderLayout.CENTER);
+		sendRow.add(sendButton, BorderLayout.EAST);
+
 		add(header, BorderLayout.NORTH);
 		add(scrollPane, BorderLayout.CENTER);
+		add(sendRow, BorderLayout.SOUTH);
 
 		setChannel(channel);
 		setConnected(false);
@@ -119,6 +177,33 @@ public class TwitchSidePanel extends PluginPanel
 		else if (channelConfigured)
 		{
 			handlers.onConnectClicked();
+		}
+	}
+
+	private void handleAuthButton()
+	{
+		switch (authState)
+		{
+			case LOGGED_OUT:
+				handlers.onLoginClicked();
+				break;
+			case WAITING_FOR_CODE:
+				handlers.onCancelLoginClicked();
+				showLoginPrompt();
+				break;
+			case LOGGED_IN:
+				handlers.onLogoutClicked();
+				break;
+		}
+	}
+
+	private void handleSend()
+	{
+		String text = messageField.getText();
+		if (text != null && !text.trim().isEmpty())
+		{
+			handlers.onSendMessage(text);
+			messageField.setText("");
 		}
 	}
 
@@ -148,6 +233,7 @@ public class TwitchSidePanel extends PluginPanel
 			this.connected = connected;
 			connectButton.setText(connected ? "Disconnect" : "Connect");
 			connectButton.setEnabled(connected || channelConfigured);
+			updateSendRowEnabled();
 		});
 	}
 
@@ -158,6 +244,62 @@ public class TwitchSidePanel extends PluginPanel
 			statusLabel.setText(text);
 			statusLabel.setForeground(isError ? new Color(0xff, 0x6b, 0x6b) : Color.GRAY);
 		});
+	}
+
+	/** Not logged in, no login attempt in progress. */
+	public void showLoginPrompt()
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			authState = AuthState.LOGGED_OUT;
+			authStatusLabel.setForeground(Color.LIGHT_GRAY);
+			authStatusLabel.setText("Not logged in");
+			authButton.setText("Log in with Twitch");
+			sendRow.setVisible(false);
+		});
+	}
+
+	/** A device code was issued and this is waiting for the user to approve it. */
+	public void showDeviceCode(String userCode, String verificationUri)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			authState = AuthState.WAITING_FOR_CODE;
+			authStatusLabel.setForeground(Color.LIGHT_GRAY);
+			authStatusLabel.setText("Go to " + verificationUri + " and enter: " + userCode);
+			authButton.setText("Cancel");
+		});
+	}
+
+	public void showLoginError(String message)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			authState = AuthState.LOGGED_OUT;
+			authStatusLabel.setForeground(new Color(0xff, 0x6b, 0x6b));
+			authStatusLabel.setText(message);
+			authButton.setText("Log in with Twitch");
+			sendRow.setVisible(false);
+		});
+	}
+
+	public void showLoggedIn(String username)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			authState = AuthState.LOGGED_IN;
+			authStatusLabel.setForeground(Color.LIGHT_GRAY);
+			authStatusLabel.setText("Logged in as " + username);
+			authButton.setText("Log out");
+			updateSendRowEnabled();
+		});
+	}
+
+	private void updateSendRowEnabled()
+	{
+		sendRow.setVisible(authState == AuthState.LOGGED_IN);
+		messageField.setEnabled(connected);
+		sendButton.setEnabled(connected);
 	}
 
 	public void appendMessage(TwitchMessage message, boolean colorUsernames, boolean showTimestamps, int maxMessages,

@@ -8,6 +8,17 @@ import net.runelite.client.config.ConfigItem;
 public interface TwitchSidePanelConfig extends Config
 {
 	@ConfigItem(
+		keyName = "clientId",
+		name = "Twitch app Client ID",
+		description = "Client ID of a Twitch application you registered at dev.twitch.tv/console/apps (Client Type: Public). Needed to log in and send messages.",
+		position = 0
+	)
+	default String clientId()
+	{
+		return "";
+	}
+
+	@ConfigItem(
 		keyName = "channel",
 		name = "Your Twitch channel",
 		description = "Your own Twitch channel name. The side panel only ever connects to this channel.",
@@ -60,5 +71,20 @@ public interface TwitchSidePanelConfig extends Config
 	default int maxMessages()
 	{
 		return 200;
+	}
+
+	// --- Internal state below, not shown in the settings UI. Written directly via
+	// ConfigManager.setConfiguration() rather than through this interface. ---
+
+	@ConfigItem(keyName = "accessToken", name = "", description = "", hidden = true)
+	default String accessToken()
+	{
+		return "";
+	}
+
+	@ConfigItem(keyName = "loggedInUsername", name = "", description = "", hidden = true)
+	default String loggedInUsername()
+	{
+		return "";
 	}
 }
