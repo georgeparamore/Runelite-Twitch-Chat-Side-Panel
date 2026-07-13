@@ -1,41 +1,37 @@
 package com.twitchsidepanel.twitch;
 
 import java.awt.Color;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
-import java.net.Socket;
-import java.nio.charset.StandardCharsets;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.WebSocket;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
-import javax.net.ssl.SSLSocket;
-import javax.net.ssl.SSLSocketFactory;
+import java.util.concurrent.CompletionStage;
 
 /**
- * Minimal read-only Twitch IRC client. Connects anonymously (Twitch allows reading chat
- * without an OAuth token as long as you never try to send a message, using a
- * "justinfan" throwaway nick) and requests the IRCv3 "tags" capability so each message
- * carries the sender's chosen display name and name color.
+ * Minimal read-only Twitch IRC client, over WebSocket rather than raw IRC sockets so it
+ * still works on networks that only allow outbound HTTPS (hotel wifi, corporate proxies,
+ * etc). Connects anonymously (Twitch allows reading chat without an OAuth token as long
+ * as you never try to send a message, using a "justinfan" throwaway nick) and requests
+ * the IRCv3 "tags" capability so each message carries the sender's chosen display name
+ * and name color.
  * <p>
  * This never sends chat messages on the user's behalf - it only reads.
  */
 public class TwitchChatClient
 {
-	private static final String HOST = "irc.chat.twitch.tv";
-	private static final int PORT = 6697;
-	// The plain createSocket(host, port) overload blocks on the OS's default TCP connect
-	// timeout (can be 60s+), leaving the panel stuck on "Connecting..." with no feedback
-	// if Twitch is unreachable. Connecting a plain socket first with an explicit timeout,
-	// then upgrading it to TLS, bounds that wait and lets a real error reach the user.
-	private static final int CONNECT_TIMEOUT_MS = 10_000;
+	private static final URI ENDPOINT = URI.create("wss://irc-ws.chat.twitch.tv:443");
+	private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
 
 	private final TwitchChatListener listener;
-	private volatile SSLSocket socket;
+	private final HttpClient httpClient = HttpClient.newBuilder()
+		.connectTimeout(CONNECT_TIMEOUT)
+		.build();
+
+	private volatile WebSocket webSocket;
 	private volatile boolean stopRequested;
-	private Thread readerThread;
 
 	public TwitchChatClient(TwitchChatListener listener)
 	{
@@ -43,75 +39,110 @@ public class TwitchChatClient
 	}
 
 	/**
-	 * Connects and joins the given channel on a background thread. Safe to call from the
-	 * Swing EDT. {@code channel} may be typed with or without a leading '#' and in any case.
+	 * Connects and joins the given channel asynchronously. Safe to call from the Swing
+	 * EDT. {@code channel} may be typed with or without a leading '#' and in any case.
 	 */
-	public synchronized void connect(String channel)
+	public void connect(String channel)
 	{
 		String normalizedChannel = normalizeChannel(channel);
 		stopRequested = false;
 
-		readerThread = new Thread(() -> runConnection(normalizedChannel), "twitch-chat-reader");
-		readerThread.setDaemon(true);
-		readerThread.start();
+		httpClient.newWebSocketBuilder()
+			.connectTimeout(CONNECT_TIMEOUT)
+			.buildAsync(ENDPOINT, new IrcListener(normalizedChannel))
+			.exceptionally(error ->
+			{
+				if (!stopRequested)
+				{
+					listener.onDisconnected("Connection error: " + rootMessage(error));
+				}
+				return null;
+			});
 	}
 
-	public synchronized void disconnect()
+	public void disconnect()
 	{
 		stopRequested = true;
-		closeSocketQuietly();
+		WebSocket ws = webSocket;
+		if (ws != null)
+		{
+			ws.sendClose(WebSocket.NORMAL_CLOSURE, "");
+		}
 	}
 
-	private void runConnection(String channel)
+	private class IrcListener implements WebSocket.Listener
 	{
-		try
+		private final String channel;
+		private final StringBuilder frameBuffer = new StringBuilder();
+
+		IrcListener(String channel)
 		{
-			Socket rawSocket = new Socket();
-			rawSocket.connect(new InetSocketAddress(HOST, PORT), CONNECT_TIMEOUT_MS);
+			this.channel = channel;
+		}
 
-			SSLSocketFactory factory = (SSLSocketFactory) SSLSocketFactory.getDefault();
-			socket = (SSLSocket) factory.createSocket(rawSocket, HOST, PORT, true);
-			socket.setSoTimeout(0);
+		@Override
+		public void onOpen(WebSocket ws)
+		{
+			webSocket = ws;
 
-			OutputStream out = socket.getOutputStream();
-			BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
-
-			// Twitch allows read-only IRC access with no OAuth token at all, as long as the
-			// nick follows the "justinfanNNNNN" convention reserved for anonymous viewers.
+			// Twitch allows read-only IRC access with no OAuth token at all, as long as
+			// the nick follows the "justinfanNNNNN" convention reserved for anonymous
+			// viewers. Each WebSocket text frame is one IRC command - no trailing CRLF.
 			String anonymousNick = "justinfan" + (10000 + new SecureRandom().nextInt(90000));
-			sendLine(out, "CAP REQ :twitch.tv/tags twitch.tv/commands");
-			sendLine(out, "NICK " + anonymousNick);
-			sendLine(out, "JOIN #" + channel);
+			ws.sendText("CAP REQ :twitch.tv/tags twitch.tv/commands", true);
+			ws.sendText("NICK " + anonymousNick, true);
+			ws.sendText("JOIN #" + channel, true);
 
-			String line;
-			while (!stopRequested && (line = in.readLine()) != null)
-			{
-				handleLine(out, line, channel);
-			}
-
-			if (!stopRequested)
-			{
-				notifyDisconnected("Connection closed by Twitch");
-			}
+			WebSocket.Listener.super.onOpen(ws);
 		}
-		catch (IOException e)
+
+		@Override
+		public CompletionStage<?> onText(WebSocket ws, CharSequence data, boolean last)
+		{
+			frameBuffer.append(data);
+			if (last)
+			{
+				// Twitch can batch several IRC lines into one WebSocket frame, especially
+				// during fast chat, so split on CRLF instead of assuming one line/frame.
+				String batch = frameBuffer.toString();
+				frameBuffer.setLength(0);
+				for (String line : batch.split("\r\n"))
+				{
+					if (!line.isEmpty())
+					{
+						handleLine(ws, line, channel);
+					}
+				}
+			}
+			ws.request(1);
+			return null;
+		}
+
+		@Override
+		public void onError(WebSocket ws, Throwable error)
 		{
 			if (!stopRequested)
 			{
-				notifyDisconnected("Connection error: " + e.getMessage());
+				listener.onDisconnected("Connection error: " + rootMessage(error));
 			}
 		}
-		finally
+
+		@Override
+		public CompletionStage<?> onClose(WebSocket ws, int statusCode, String reason)
 		{
-			closeSocketQuietly();
+			if (!stopRequested)
+			{
+				listener.onDisconnected(reason == null || reason.isEmpty() ? "Connection closed by Twitch" : reason);
+			}
+			return null;
 		}
 	}
 
-	private void handleLine(OutputStream out, String line, String channel) throws IOException
+	private void handleLine(WebSocket ws, String line, String channel)
 	{
 		if (line.startsWith("PING"))
 		{
-			sendLine(out, "PONG :tmi.twitch.tv");
+			ws.sendText("PONG :tmi.twitch.tv", true);
 			return;
 		}
 
@@ -209,31 +240,15 @@ public class TwitchChatClient
 		}
 	}
 
-	private void sendLine(OutputStream out, String line) throws IOException
+	private static String rootMessage(Throwable error)
 	{
-		out.write((line + "\r\n").getBytes(StandardCharsets.UTF_8));
-		out.flush();
-	}
-
-	private void notifyDisconnected(String reason)
-	{
-		listener.onDisconnected(reason);
-	}
-
-	private void closeSocketQuietly()
-	{
-		SSLSocket s = socket;
-		if (s != null)
+		Throwable cause = error;
+		while (cause.getCause() != null)
 		{
-			try
-			{
-				s.close();
-			}
-			catch (IOException ignored)
-			{
-				// Nothing useful to do with a failure to close an already-broken socket.
-			}
+			cause = cause.getCause();
 		}
+		String message = cause.getMessage();
+		return message != null ? message : cause.getClass().getSimpleName();
 	}
 
 	private static String normalizeChannel(String channel)

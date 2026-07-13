@@ -10,19 +10,20 @@ import javax.swing.BoxLayout;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
-import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import net.runelite.client.ui.PluginPanel;
 
 /**
  * Party-Hub-style side panel that shows Twitch chat as a scrolling message feed instead
- * of the official Twitch plugin's chatbox-PM format.
+ * of the official Twitch plugin's chatbox-PM format. Only ever connects to the channel
+ * configured in the plugin's settings (your own channel) - there is no way to type in and
+ * join an arbitrary channel from the panel itself.
  */
 public class TwitchSidePanel extends PluginPanel
 {
 	public interface Handlers
 	{
-		void onConnectClicked(String channel);
+		void onConnectClicked();
 
 		void onDisconnectClicked();
 	}
@@ -30,7 +31,7 @@ public class TwitchSidePanel extends PluginPanel
 	private static final Color BACKGROUND = new Color(0x1b, 0x18, 0x24);
 	private static final Color CARD_BACKGROUND = new Color(0x2a, 0x24, 0x38);
 
-	private final JTextField channelField;
+	private final JLabel channelLabel;
 	private final PillButton connectButton;
 	private final JLabel statusLabel;
 	private final JPanel messageListPanel;
@@ -38,9 +39,17 @@ public class TwitchSidePanel extends PluginPanel
 
 	private final Handlers handlers;
 	private boolean connected;
+	private boolean channelConfigured;
 
-	public TwitchSidePanel(Handlers handlers, String initialChannel)
+	public TwitchSidePanel(Handlers handlers, String channel)
 	{
+		// PluginPanel's default (no-arg) constructor wraps all content in its own
+		// DynamicGridLayout + JScrollPane machinery, which conflicts with our own
+		// BorderLayout + JScrollPane below (the message feed's viewport was permanently
+		// stuck at 0 height until this was found). super(false) opts out of that, giving
+		// this panel full control over its own layout and scrolling.
+		super(false);
+
 		this.handlers = handlers;
 
 		setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
@@ -62,13 +71,13 @@ public class TwitchSidePanel extends PluginPanel
 		connectRow.setAlignmentX(LEFT_ALIGNMENT);
 		connectRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
 
-		channelField = new JTextField(initialChannel == null ? "" : initialChannel);
-		channelField.setToolTipText("Twitch channel name");
+		channelLabel = new JLabel();
+		channelLabel.setForeground(Color.LIGHT_GRAY);
 
 		connectButton = new PillButton("Connect", new Color(0x91, 0x46, 0xff), new Color(0xa8, 0x6c, 0xff));
 		connectButton.addActionListener(e -> handleConnectButton());
 
-		connectRow.add(channelField, BorderLayout.CENTER);
+		connectRow.add(channelLabel, BorderLayout.CENTER);
 		connectRow.add(connectButton, BorderLayout.EAST);
 
 		statusLabel = new JLabel("Not connected");
@@ -95,6 +104,7 @@ public class TwitchSidePanel extends PluginPanel
 		add(header, BorderLayout.NORTH);
 		add(scrollPane, BorderLayout.CENTER);
 
+		setChannel(channel);
 		setConnected(false);
 	}
 
@@ -104,14 +114,29 @@ public class TwitchSidePanel extends PluginPanel
 		{
 			handlers.onDisconnectClicked();
 		}
-		else
+		else if (channelConfigured)
 		{
-			String channel = channelField.getText().trim();
-			if (!channel.isEmpty())
-			{
-				handlers.onConnectClicked(channel);
-			}
+			handlers.onConnectClicked();
 		}
+	}
+
+	/**
+	 * Updates the channel this panel will connect to (read from plugin config - there is
+	 * no in-panel way to type a different one). Safe to call again later if the user edits
+	 * the config while the panel is open.
+	 */
+	public void setChannel(String channel)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			channelConfigured = channel != null && !channel.trim().isEmpty();
+			channelLabel.setText(channelConfigured ? "#" + channel.trim() : "No channel set");
+			connectButton.setEnabled(channelConfigured || connected);
+			if (!channelConfigured)
+			{
+				setStatus("Set your channel in the plugin settings", true);
+			}
+		});
 	}
 
 	public void setConnected(boolean connected)
@@ -120,7 +145,7 @@ public class TwitchSidePanel extends PluginPanel
 		{
 			this.connected = connected;
 			connectButton.setText(connected ? "Disconnect" : "Connect");
-			channelField.setEnabled(!connected);
+			connectButton.setEnabled(connected || channelConfigured);
 		});
 	}
 

@@ -9,8 +9,8 @@ public interface TwitchSidePanelConfig extends Config
 {
 	@ConfigItem(
 		keyName = "channel",
-		name = "Twitch channel",
-		description = "The Twitch channel whose chat should be shown in the side panel.",
+		name = "Your Twitch channel",
+		description = "Your own Twitch channel name. The side panel only ever connects to this channel.",
 		position = 1
 	)
 	default String channel()

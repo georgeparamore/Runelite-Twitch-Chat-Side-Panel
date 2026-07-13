@@ -9,24 +9,31 @@ import com.twitchsidepanel.ui.TwitchSidePanel;
 import java.awt.image.BufferedImage;
 import javax.inject.Inject;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.events.ConfigChanged;
+import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 
 /**
- * Shows a Twitch channel's live chat in a RuneLite side panel, Party-Hub style, instead
- * of the official Twitch plugin's chatbox-PM format. Read-only: it only displays chat,
- * it never sends messages or otherwise acts on the streamer's or viewers' behalf.
+ * Shows your Twitch channel's live chat in a RuneLite side panel, Party-Hub style,
+ * instead of the official Twitch plugin's chatbox-PM format. Read-only: it only displays
+ * chat, it never sends messages or otherwise acts on the streamer's or viewers' behalf.
+ * <p>
+ * Only ever connects to the channel set in this plugin's config (your own channel) - it
+ * cannot be pointed at an arbitrary Twitch channel from the panel itself.
  */
 @PluginDescriptor(
 	name = "Twitch Chat Side Panel",
-	description = "Shows Twitch chat in a side panel instead of the chatbox PM format",
+	description = "Shows your Twitch channel's chat in a side panel instead of the chatbox PM format",
 	tags = {"twitch", "chat", "stream", "panel"},
 	enabledByDefault = false
 )
 public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 {
+	private static final String CONFIG_GROUP = "twitchsidepanel";
+
 	@Inject
 	private ClientToolbar clientToolbar;
 
@@ -51,8 +58,9 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 		panel = new TwitchSidePanel(new TwitchSidePanel.Handlers()
 		{
 			@Override
-			public void onConnectClicked(String channel)
+			public void onConnectClicked()
 			{
+				String channel = config.channel().trim();
 				panel.setStatus("Connecting to #" + channel + "...", false);
 				chatClient.connect(channel);
 			}
@@ -79,8 +87,9 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 
 		if (config.autoConnect() && !config.channel().trim().isEmpty())
 		{
-			panel.setStatus("Connecting to #" + config.channel().trim() + "...", false);
-			chatClient.connect(config.channel());
+			String channel = config.channel().trim();
+			panel.setStatus("Connecting to #" + channel + "...", false);
+			chatClient.connect(channel);
 		}
 	}
 
@@ -96,6 +105,15 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 			clientToolbar.removeNavigation(navButton);
 		}
 		panel = null;
+	}
+
+	@Subscribe
+	public void onConfigChanged(ConfigChanged event)
+	{
+		if (panel != null && CONFIG_GROUP.equals(event.getGroup()) && "channel".equals(event.getKey()))
+		{
+			panel.setChannel(config.channel());
+		}
 	}
 
 	@Override
