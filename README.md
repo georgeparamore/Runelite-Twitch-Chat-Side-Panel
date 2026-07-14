@@ -152,7 +152,7 @@ account:
   real message (confirmed with a broadcaster badge).
 
 This live testing (including on a real Mac, not just headless sandbox testing) caught and
-fixed ten real bugs before they reached most users:
+fixed eleven real bugs before they reached most users:
 
 1. The original raw-IRC-socket transport (`irc.chat.twitch.tv:6697`) had no connect
    timeout, so an unreachable network left the panel stuck on "Connecting..." forever.
@@ -225,6 +225,14 @@ fixed ten real bugs before they reached most users:
     needed a new OAuth scope (`user:read:emotes`), so anyone logged in before this change
     needs to log out and back in once for the picker (and matching local-echo icons) to
     work again.
+11. Clicking the emote button always opened a fresh picker on top of whatever was already
+    there instead of toggling it closed on a second click, and the first open each session
+    took noticeably longer than later ones ("works right after I send a message"). Both
+    came from the same design: every click re-ran three sequential Helix calls (own user
+    id, broadcaster id, entitled emotes) with no memory of the last result, and no
+    reference to the currently-open popup to close instead of replace. Fixed by caching
+    the last successful fetch for the session (entitlement essentially never changes
+    mid-session) and having the button track its own popup to toggle.
 
 The sub/gift carousel's `USERNOTICE` parsing (`parseUserNotice`) is covered by 7 unit
 tests (`TwitchChatClientTest`) built from Twitch's documented tag format, since there's

@@ -18,6 +18,7 @@ import javax.swing.BoxLayout;
 import javax.swing.ImageIcon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.Scrollable;
 import javax.swing.SwingConstants;
@@ -86,6 +87,10 @@ public class TwitchSidePanel extends PluginPanel
 	private boolean channelConfigured;
 	private AuthState authState = AuthState.LOGGED_OUT;
 	private volatile String myUsername;
+
+	// The currently-open emote picker popup, if any - lets a second click on the emote
+	// button close it again instead of always opening a new one on top of itself.
+	private JPopupMenu emotePickerPopup;
 
 	// Most-recently-seen chatters (most recent first), for the "@" mention autocomplete -
 	// capped so a long-running session doesn't grow this unbounded.
@@ -228,7 +233,7 @@ public class TwitchSidePanel extends PluginPanel
 		new MentionAutocomplete(messageField, () -> recentUsernames);
 
 		emoteButton = new EmoteButton(fieldBackground);
-		emoteButton.addActionListener(e -> handlers.onEmotePickerClicked());
+		emoteButton.addActionListener(e -> handleEmoteButton());
 
 		// Twitch's own chat box embeds its emote button inside the input field itself,
 		// at its right edge, rather than as a separate control taking up its own row
@@ -291,6 +296,21 @@ public class TwitchSidePanel extends PluginPanel
 			handlers.onSendMessage(text);
 			messageField.setText("");
 		}
+	}
+
+	/**
+	 * Toggles the emote picker: if it's already open, a second click closes it again
+	 * instead of fetching/reopening a new one on top of itself. Otherwise asks the plugin
+	 * to fetch (or serve from cache - see {@link #showEmotePicker}) and show it.
+	 */
+	private void handleEmoteButton()
+	{
+		if (emotePickerPopup != null && emotePickerPopup.isVisible())
+		{
+			emotePickerPopup.setVisible(false);
+			return;
+		}
+		handlers.onEmotePickerClicked();
 	}
 
 	/**
@@ -471,7 +491,8 @@ public class TwitchSidePanel extends PluginPanel
 	 */
 	public void showEmotePicker(EmoteSetLoader.Result emotes, Map<String, ImageIcon> icons)
 	{
-		SwingUtilities.invokeLater(() -> EmotePickerPopup.show(emoteButton, emotes, icons, this::insertEmoteText));
+		SwingUtilities.invokeLater(() ->
+			emotePickerPopup = EmotePickerPopup.show(emoteButton, emotes, icons, this::insertEmoteText));
 	}
 
 	private void insertEmoteText(String emoteName)

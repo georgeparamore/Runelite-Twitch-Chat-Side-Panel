@@ -89,6 +89,16 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 	// echo render emotes the same way instead of just showing their plain text code.
 	private volatile Map<String, String> knownEmoteNameToId = Collections.emptyMap();
 
+	// Cached result of the last successful emote-set fetch, so opening the picker more
+	// than once per session doesn't re-run three sequential Helix calls (own user id,
+	// broadcaster id, entitled emotes) every single click - that round trip was the
+	// "takes a while to load, works right after" delay being seen, since the very first
+	// open (or one shortly after connecting/logging in) always paid that cost fresh.
+	// Entitlement essentially never changes mid-session, so serving the cached result
+	// instead of always re-fetching is a safe tradeoff.
+	private volatile EmoteSetLoader.Result cachedEmoteSet;
+	private volatile Map<String, ImageIcon> cachedEmoteIcons = Collections.emptyMap();
+
 	@Provides
 	TwitchSidePanelConfig getConfig(final ConfigManager configManager)
 	{
@@ -286,32 +296,40 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 	}
 
 	/**
-	 * Fetches this channel's available emotes (its own + Twitch's global set) and shows
-	 * them in the picker popup - mirrors the emote button next to Twitch's own chat
-	 * input. Only meaningful once logged in, since the button only exists inside the send
-	 * row, which is itself hidden until then.
+	 * Shows the picker popup - mirrors the emote button next to Twitch's own chat input.
+	 * Only meaningful once logged in, since the button only exists inside the send row,
+	 * which is itself hidden until then. Serves the cached emote set instantly if one's
+	 * already been fetched this session (see {@link #cachedEmoteSet}); only hits the
+	 * network the first time, or if that initial fetch hasn't finished yet.
 	 */
 	private void loadEmotePicker()
 	{
-		loadEmoteSet(config.accessToken(), emotes ->
+		EmoteSetLoader.Result cached = cachedEmoteSet;
+		if (cached != null)
 		{
-			Map<String, ImageIcon> icons = new HashMap<>();
-			resolveIcons(emotes.channelEmotes, icons);
-			resolveIcons(emotes.globalEmotes, icons);
-
 			if (panel != null)
 			{
-				panel.showEmotePicker(emotes, icons);
+				panel.showEmotePicker(cached, cachedEmoteIcons);
+			}
+			return;
+		}
+
+		loadEmoteSet(config.accessToken(), emotes ->
+		{
+			if (panel != null)
+			{
+				panel.showEmotePicker(emotes, cachedEmoteIcons);
 			}
 		});
 	}
 
 	/**
-	 * Fetches this channel's available emotes (its own + Twitch's global set) and
-	 * remembers their name -> id mapping for {@link #resolveLocalEmotes}, in addition to
-	 * whatever {@code onLoaded} does with the result (e.g. showing the picker popup -
-	 * {@code onLoaded} may be null when this is only warming the cache, such as right
-	 * after login). Needs a user token, same as badge icons.
+	 * Fetches this channel's available emotes (its own + Twitch's global set), remembers
+	 * their name -> id mapping for {@link #resolveLocalEmotes} and caches the result (see
+	 * {@link #cachedEmoteSet}), in addition to whatever {@code onLoaded} does with the
+	 * result (e.g. showing the picker popup - {@code onLoaded} may be null when this is
+	 * only warming the cache, such as right after login). Needs a user token, same as
+	 * badge icons.
 	 */
 	private void loadEmoteSet(String accessToken, Consumer<EmoteSetLoader.Result> onLoaded)
 	{
@@ -325,6 +343,13 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 		{
 			EmoteSetLoader.Result emotes = emoteSetLoader.load(CLIENT_ID, accessToken, channel);
 			rememberEmoteNames(emotes);
+
+			Map<String, ImageIcon> icons = new HashMap<>();
+			resolveIcons(emotes.channelEmotes, icons);
+			resolveIcons(emotes.globalEmotes, icons);
+			cachedEmoteIcons = icons;
+			cachedEmoteSet = emotes;
+
 			if (onLoaded != null)
 			{
 				onLoaded.accept(emotes);
@@ -364,6 +389,11 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 	{
 		configManager.unsetConfiguration(CONFIG_GROUP, "accessToken");
 		configManager.unsetConfiguration(CONFIG_GROUP, "loggedInUsername");
+		// Otherwise a different account logging in afterward would see the previous
+		// account's cached entitled emotes until the picker happened to be reopened.
+		cachedEmoteSet = null;
+		cachedEmoteIcons = Collections.emptyMap();
+		knownEmoteNameToId = Collections.emptyMap();
 	}
 
 	@Subscribe

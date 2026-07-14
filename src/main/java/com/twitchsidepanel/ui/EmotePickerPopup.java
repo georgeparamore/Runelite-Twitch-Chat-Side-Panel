@@ -46,7 +46,12 @@ final class EmotePickerPopup
 	{
 	}
 
-	static void show(JComponent invoker, EmoteSetLoader.Result emotes, Map<String, ImageIcon> icons,
+	/**
+	 * Builds and shows the popup, returning it so the caller can track/toggle its
+	 * visibility (e.g. a second click on the button that opened it should close it again
+	 * rather than reopening a new one).
+	 */
+	static JPopupMenu show(JComponent invoker, EmoteSetLoader.Result emotes, Map<String, ImageIcon> icons,
 		Consumer<String> onEmoteChosen)
 	{
 		JPopupMenu popup = new JPopupMenu();
@@ -86,6 +91,7 @@ final class EmotePickerPopup
 		}
 
 		popup.show(invoker, 0, -popup.getPreferredSize().height - 4);
+		return popup;
 	}
 
 	private static void addSection(JPanel content, String title, List<EmoteSetLoader.EmoteInfo> section,
