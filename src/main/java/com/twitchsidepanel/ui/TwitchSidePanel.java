@@ -1,6 +1,7 @@
 package com.twitchsidepanel.ui;
 
 import com.twitchsidepanel.twitch.TwitchMessage;
+import com.twitchsidepanel.twitch.TwitchSubEvent;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -57,6 +58,7 @@ public class TwitchSidePanel extends PluginPanel
 	private final JLabel statusLabel;
 	private final JLabel authStatusLabel;
 	private final PillButton authButton;
+	private final SubGiftCarouselPanel subGiftCarousel;
 	private final JPanel messageListPanel;
 	private final JScrollPane scrollPane;
 	private final JTextField messageField;
@@ -135,6 +137,14 @@ public class TwitchSidePanel extends PluginPanel
 		header.add(statusLabel);
 		header.add(authRow);
 
+		subGiftCarousel = new SubGiftCarouselPanel();
+
+		JPanel topContainer = new JPanel();
+		topContainer.setLayout(new BoxLayout(topContainer, BoxLayout.Y_AXIS));
+		topContainer.setBackground(BACKGROUND);
+		topContainer.add(header);
+		topContainer.add(subGiftCarousel);
+
 		messageListPanel = new JPanel();
 		messageListPanel.setLayout(new BoxLayout(messageListPanel, BoxLayout.Y_AXIS));
 		messageListPanel.setBackground(BACKGROUND);
@@ -160,7 +170,7 @@ public class TwitchSidePanel extends PluginPanel
 		sendRow.add(messageField, BorderLayout.CENTER);
 		sendRow.add(sendButton, BorderLayout.EAST);
 
-		add(header, BorderLayout.NORTH);
+		add(topContainer, BorderLayout.NORTH);
 		add(scrollPane, BorderLayout.CENTER);
 		add(sendRow, BorderLayout.SOUTH);
 
@@ -338,5 +348,10 @@ public class TwitchSidePanel extends PluginPanel
 			messageListPanel.revalidate();
 			messageListPanel.repaint();
 		});
+	}
+
+	public void addSubEvent(TwitchSubEvent event)
+	{
+		subGiftCarousel.addEvent(event);
 	}
 }

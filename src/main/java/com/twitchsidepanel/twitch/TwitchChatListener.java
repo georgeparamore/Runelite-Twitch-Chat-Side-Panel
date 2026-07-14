@@ -24,4 +24,13 @@ public interface TwitchChatListener
 	default void onSelfUserState(Color color, List<TwitchMessage.BadgeRef> badges)
 	{
 	}
+
+	/**
+	 * A subscription or gift-sub happened in the channel. Arrives on any connection
+	 * (anonymous or authenticated) - Twitch broadcasts these to every viewer, the same
+	 * as chat messages.
+	 */
+	default void onSubEvent(TwitchSubEvent event)
+	{
+	}
 }

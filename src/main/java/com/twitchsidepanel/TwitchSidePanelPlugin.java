@@ -7,6 +7,7 @@ import com.twitchsidepanel.twitch.TwitchAuthService;
 import com.twitchsidepanel.twitch.TwitchChatClient;
 import com.twitchsidepanel.twitch.TwitchChatListener;
 import com.twitchsidepanel.twitch.TwitchMessage;
+import com.twitchsidepanel.twitch.TwitchSubEvent;
 import com.twitchsidepanel.ui.TwitchPanelIcon;
 import com.twitchsidepanel.ui.TwitchSidePanel;
 import java.awt.Color;
@@ -310,6 +311,15 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 	{
 		selfColor = color;
 		selfBadges = badges;
+	}
+
+	@Override
+	public void onSubEvent(TwitchSubEvent event)
+	{
+		if (panel != null)
+		{
+			panel.addSubEvent(event);
+		}
 	}
 
 	/**

@@ -82,6 +82,13 @@ Instead, `TwitchSidePanelPlugin` renders a local copy of what you just sent imme
 styled with your real name color and badges (captured from the `USERSTATE` message
 Twitch sends on an authenticated connection).
 
+**Sub/gift carousel**: turned out not to need Twitch's EventSub (a separate real-time
+system) at all - sub, resub, and gift-sub events arrive as `USERNOTICE` messages on the
+same IRC connection already used for chat, for both anonymous and authenticated
+connections. `TwitchChatClient.parseUserNotice()` turns those into a `TwitchSubEvent`;
+`SubGiftCarouselPanel` shows the most recent ones as a horizontally-scrolling strip of
+chips above the message feed, hidden until the first event of a session arrives.
+
 ## Building / running locally
 
 ```
@@ -125,9 +132,17 @@ This live testing caught and fixed three real bugs before they reached anyone:
    rejected by Twitch), so there is no server echo to rely on. Fixed with a local echo -
    see "Your own sent messages" above.
 
-**Not yet verified**: sub/gift carousel (not started - needs Twitch's EventSub, a
-separate real-time system from IRC, and was always the lowest-priority, most speculative
-part of the original design), long-running sessions (hours), very high sustained chat
-volume, non-Latin channel names, token refresh (the plugin does not yet refresh an
-expired token - you'd need to log in again; unclear yet how long a device-flow token
-actually lasts before that matters in practice).
+The sub/gift carousel's `USERNOTICE` parsing (`parseUserNotice`) is covered by 7 unit
+tests (`TwitchChatClientTest`) built from Twitch's documented tag format, since there's
+no practical way to trigger a real sub/gift event live without spending real money -
+sub/resub, single gift, gift bomb, anonymous gift bomb, and two "ignore this, it's not a
+type we show" cases (raids, tag-less lines) are all covered and passing. The UI rendering
+(chip layout, icon, auto-scroll-to-newest) was visually verified with synthetic events
+injected locally, then that test-only code was removed before committing.
+
+**Not yet verified**: an actual real sub/gift event end-to-end (parsing logic is unit
+tested against Twitch's documented format; UI rendering was checked with synthetic data;
+the two have not been proven together against a real Twitch event). Also: long-running
+sessions (hours), very high sustained chat volume, non-Latin channel names, token refresh
+(the plugin does not yet refresh an expired token - you'd need to log in again; unclear
+yet how long a device-flow token actually lasts before that matters in practice).

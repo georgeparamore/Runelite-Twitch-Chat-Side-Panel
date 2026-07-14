@@ -228,6 +228,87 @@ public class TwitchChatClient
 		{
 			Map<String, String> tags = parseTags(line);
 			listener.onSelfUserState(parseColor(tags.get("color")), parseBadges(tags.get("badges")));
+			return;
+		}
+
+		if (line.contains("USERNOTICE #" + channel))
+		{
+			TwitchSubEvent event = parseUserNotice(line);
+			if (event != null)
+			{
+				listener.onSubEvent(event);
+			}
+		}
+	}
+
+	/**
+	 * Parses a sub/resub/gift-sub {@code USERNOTICE}. Twitch also sends USERNOTICE for
+	 * raids, rituals, and bits-badge unlocks, none of which carry the tags this looks
+	 * for, so those fall through and return {@code null} - not an error, just an event
+	 * type this plugin doesn't currently show.
+	 */
+	TwitchSubEvent parseUserNotice(String line)
+	{
+		Map<String, String> tags = parseTags(line);
+		String msgId = tags.get("msg-id");
+		if (msgId == null)
+		{
+			return null;
+		}
+
+		long now = System.currentTimeMillis();
+		switch (msgId)
+		{
+			case "sub":
+			case "resub":
+			{
+				String displayName = tags.get("display-name");
+				if (displayName == null || displayName.isEmpty())
+				{
+					return null;
+				}
+				return new TwitchSubEvent(TwitchSubEvent.Type.SUB, displayName, 1, now);
+			}
+			case "subgift":
+			case "anonsubgift":
+			{
+				String recipient = tags.get("msg-param-recipient-display-name");
+				if (recipient == null || recipient.isEmpty())
+				{
+					return null;
+				}
+				return new TwitchSubEvent(TwitchSubEvent.Type.GIFT_SUB, recipient, 1, now);
+			}
+			case "submysterygift":
+			case "anonsubmysterygift":
+			{
+				String gifter = tags.get("display-name");
+				if (gifter == null || gifter.isEmpty())
+				{
+					gifter = "An anonymous gifter";
+				}
+				int count = parsePositiveInt(tags.get("msg-param-mass-gift-count"), 1);
+				return new TwitchSubEvent(TwitchSubEvent.Type.GIFT_BOMB, gifter, count, now);
+			}
+			default:
+				return null;
+		}
+	}
+
+	private static int parsePositiveInt(String value, int fallback)
+	{
+		if (value == null)
+		{
+			return fallback;
+		}
+		try
+		{
+			int parsed = Integer.parseInt(value);
+			return parsed > 0 ? parsed : fallback;
+		}
+		catch (NumberFormatException e)
+		{
+			return fallback;
 		}
 	}
 
