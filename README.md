@@ -13,21 +13,25 @@ setup needed, just click **Log in with Twitch**.
 ## Using it
 
 1. Open the plugin's settings (gear icon in the plugin list) and set **Twitch channel**
-   to whichever channel you want chat for.
+   to whichever channel you want chat for - either the plain name, or you can paste the
+   channel's full twitch.tv URL straight from a browser and it's cleaned up automatically.
 2. Open the plugin's side panel (toolbar icon) and click **Connect** to start reading
-   chat - no login needed for this part.
+   chat - no login needed for this part. The feed shows a "Connected to #channel" notice
+   so it's always clear which channel you're actually looking at, especially useful after
+   switching channels in settings and reconnecting.
 3. To also send messages, click **Log in with Twitch** in the panel and follow the
    code/link it shows you (it also tries to open your browser to it automatically). Once
-   logged in, a message box appears at the bottom of the panel, with an emote button next
-   to **Chat** - click it to browse and insert that channel's emotes plus Twitch's global
-   set, the same as the emote button in Twitch's own chat box.
+   logged in, a message box appears at the bottom of the panel, with an emote button
+   embedded in its right edge - just like Twitch's own chat box - click it to browse and
+   insert emotes you're entitled to use in that channel, plus Twitch's global set.
 
 If no channel is configured, the panel shows "No channel set" and the Connect button is
 disabled until you set one.
 
 Config options (gear icon in the plugin list):
 
-- **Twitch channel** - the only channel this plugin will ever connect to.
+- **Twitch channel** - the only channel this plugin will ever connect to. Accepts a plain
+  channel name or a pasted twitch.tv URL.
 - **Auto-connect on login** - connects automatically when the client starts.
 - **Color usernames** - use each chatter's Twitch name color.
 - **Show timestamps** - show `HH:mm` per message.
@@ -73,18 +77,32 @@ Clicking any sender's name in the feed starts a reply to them by setting the mes
 to "@Username " - the same click-to-@mention gesture Twitch's chat offers. See
 `ChatMessageRowPanel`.
 
-**Emote picker**: the emote button next to **Chat** fetches only the emotes you're
-actually entitled to use in the current channel - Twitch's global set plus that channel's
-subscriber/follower emotes, filtered by your real subscription tier - via Helix's "Get
-User Emotes" (`GET /helix/chat/emotes/user?user_id=...&broadcaster_id=...`), and shows
-them as a scrollable icon grid, split into "Channel emotes" / "Global emotes" sections -
-click one to insert its text code into the message field. This is deliberately not "Get
-Channel Emotes", which returns a channel's entire emote set with no regard for whether you
-can actually use any given one - picking a tier-locked emote from that would just post its
-plain text code, since Twitch itself won't render an emote you're not entitled to. Needs a
-login the same as sending messages does, plus the `user:read:emotes` scope; the icons
-themselves reuse `EmoteImageCache`, the same cache that renders emotes inline in chat
-messages. See `EmoteSetLoader` / `EmotePickerPopup`.
+**Emote picker**: the emote button, overlaid inside the message field's own right edge
+(`OverlayLayout` stacking it on top of the field rather than as a separate control taking
+up its own row width - the same embedded placement Twitch's own chat box uses), fetches
+only the emotes you're actually entitled to use in the current channel - Twitch's global
+set plus that channel's subscriber/follower emotes, filtered by your real subscription
+tier - via Helix's "Get User Emotes" (`GET /helix/chat/emotes/user?user_id=...&broadcaster_id=...`),
+and shows them as a scrollable icon grid, split into "Channel emotes" / "Global emotes"
+sections - click one to insert its text code into the message field. This is deliberately
+not "Get Channel Emotes", which returns a channel's entire emote set with no regard for
+whether you can actually use any given one - picking a tier-locked emote from that would
+just post its plain text code, since Twitch itself won't render an emote you're not
+entitled to. Needs a login the same as sending messages does, plus the `user:read:emotes`
+scope; the icons themselves reuse `EmoteImageCache`, the same cache that renders emotes
+inline in chat messages. See `EmoteSetLoader` / `EmotePickerPopup` / `EmoteButton`.
+
+**Channel URLs in config**: the "Twitch channel" setting accepts a pasted full twitch.tv
+URL (with or without a protocol, trailing path like `/videos`, or query string) as well as
+a plain name - `TwitchChannelName.normalize()` strips it down to just the channel name,
+and the plugin rewrites the stored config value to the cleaned-up name so the settings
+field itself visibly reflects what was actually understood, not just silently under the
+hood.
+
+**Connection notices in the feed**: connecting successfully appends a "Connected to
+#channel" line directly into the message feed (not just the status text above it), so
+there's always a visible marker of exactly when a channel switch or reconnect happened,
+styled distinctly from a real chat message via `SystemMessageRowPanel`.
 
 **Badge icons**: badge *names* (subscriber, moderator, vip, ...) arrive over IRC for every
 message regardless of login state, but turning those into actual icon images needs an

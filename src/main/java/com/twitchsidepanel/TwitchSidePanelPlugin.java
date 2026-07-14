@@ -5,6 +5,7 @@ import com.twitchsidepanel.twitch.BadgeIconCache;
 import com.twitchsidepanel.twitch.EmoteImageCache;
 import com.twitchsidepanel.twitch.EmoteSetLoader;
 import com.twitchsidepanel.twitch.TwitchAuthService;
+import com.twitchsidepanel.twitch.TwitchChannelName;
 import com.twitchsidepanel.twitch.TwitchChatClient;
 import com.twitchsidepanel.twitch.TwitchChatListener;
 import com.twitchsidepanel.twitch.TwitchMessage;
@@ -146,7 +147,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 			{
 				loadEmotePicker();
 			}
-		}, config.channel());
+		}, TwitchChannelName.normalize(config.channel()));
 
 		BufferedImage icon = TwitchPanelIcon.create();
 
@@ -161,7 +162,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 
 		restoreLoginState();
 
-		if (config.autoConnect() && !config.channel().trim().isEmpty())
+		if (config.autoConnect() && !TwitchChannelName.normalize(config.channel()).isEmpty())
 		{
 			connectToChannel();
 		}
@@ -184,7 +185,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 
 	private void connectToChannel()
 	{
-		String channel = config.channel().trim();
+		String channel = TwitchChannelName.normalize(config.channel());
 		panel.setStatus("Connecting to #" + channel + "...", false);
 
 		String accessToken = config.accessToken();
@@ -273,7 +274,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 
 	private void loadBadgeIcons(String accessToken)
 	{
-		String channel = config.channel().trim();
+		String channel = TwitchChannelName.normalize(config.channel());
 		if (channel.isEmpty())
 		{
 			return;
@@ -314,7 +315,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 	 */
 	private void loadEmoteSet(String accessToken, Consumer<EmoteSetLoader.Result> onLoaded)
 	{
-		String channel = config.channel().trim();
+		String channel = TwitchChannelName.normalize(config.channel());
 		if (channel.isEmpty() || accessToken.isEmpty())
 		{
 			return;
@@ -368,9 +369,28 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
-		if (panel != null && CONFIG_GROUP.equals(event.getGroup()) && "channel".equals(event.getKey()))
+		if (!CONFIG_GROUP.equals(event.getGroup()) || !"channel".equals(event.getKey()))
 		{
-			panel.setChannel(config.channel());
+			return;
+		}
+
+		String raw = config.channel();
+		String normalized = TwitchChannelName.normalize(raw);
+		if (!normalized.equals(raw))
+		{
+			// Rewriting the stored value (rather than only normalizing at the call
+			// sites that actually connect) means the settings field itself shows the
+			// cleaned-up channel name - visible confirmation that pasting a channel
+			// URL worked, not just silent under-the-hood handling. This re-fires
+			// onConfigChanged with the already-normalized value, which then falls
+			// through to the branch below and stops.
+			configManager.setConfiguration(CONFIG_GROUP, "channel", normalized);
+			return;
+		}
+
+		if (panel != null)
+		{
+			panel.setChannel(normalized);
 		}
 	}
 
@@ -383,6 +403,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 		}
 		panel.setConnected(true);
 		panel.setStatus("Connected to #" + channel, false);
+		panel.appendSystemMessage("Connected to #" + channel);
 	}
 
 	@Override

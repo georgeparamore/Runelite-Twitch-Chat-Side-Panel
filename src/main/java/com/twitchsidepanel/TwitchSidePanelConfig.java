@@ -10,7 +10,7 @@ public interface TwitchSidePanelConfig extends Config
 	@ConfigItem(
 		keyName = "channel",
 		name = "Twitch channel",
-		description = "The Twitch channel to show chat for. The side panel only ever connects to this one channel - there's no in-panel way to switch to another.",
+		description = "The Twitch channel to show chat for - a plain channel name, or you can paste the channel's full twitch.tv URL and it'll be cleaned up automatically. The side panel only ever connects to this one channel - there's no in-panel way to switch to another.",
 		position = 1
 	)
 	default String channel()

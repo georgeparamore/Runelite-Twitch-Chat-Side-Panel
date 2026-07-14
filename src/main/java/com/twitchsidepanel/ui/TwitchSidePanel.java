@@ -5,6 +5,7 @@ import com.twitchsidepanel.twitch.TwitchMessage;
 import com.twitchsidepanel.twitch.TwitchSubEvent;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.util.ArrayList;
@@ -17,6 +18,7 @@ import javax.swing.ImageIcon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.OverlayLayout;
 import javax.swing.Scrollable;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
@@ -205,27 +207,45 @@ public class TwitchSidePanel extends PluginPanel
 			BorderFactory.createEmptyBorder(8, 10, 10, 10)));
 		sendRow.setVisible(false);
 
+		Color fieldBackground = new Color(0x1e, 0x1e, 0x26);
+
 		messageField = new PlaceholderTextField("Send a message");
-		messageField.setBackground(new Color(0x1e, 0x1e, 0x26));
+		messageField.setBackground(fieldBackground);
 		messageField.setForeground(Color.WHITE);
 		messageField.setCaretColor(Color.WHITE);
-		messageField.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
+		// Extra right padding reserves room for the emote button overlaid on top of the
+		// field below, so typed text never runs underneath it.
+		messageField.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 32));
 		messageField.addActionListener(e -> handleSend());
 		new MentionAutocomplete(messageField, () -> recentUsernames);
 
-		emoteButton = new EmoteButton(new Color(0x2a, 0x2a, 0x33), new Color(0x38, 0x38, 0x44));
+		emoteButton = new EmoteButton(fieldBackground);
 		emoteButton.addActionListener(e -> handlers.onEmotePickerClicked());
+
+		// Twitch's own chat box embeds its emote button inside the input field itself,
+		// at its right edge, rather than as a separate control taking up its own row
+		// width - OverlayLayout stacks the two on top of each other by alignment (the
+		// field fills the whole area, the button aligns to the right edge) instead of a
+		// normal side-by-side layout, and painting the button's own background to match
+		// the field's makes the seam invisible.
+		JPanel fieldStack = new JPanel();
+		fieldStack.setLayout(new OverlayLayout(fieldStack));
+		fieldStack.setOpaque(false);
+		messageField.setAlignmentX(0f);
+		messageField.setAlignmentY(0.5f);
+		emoteButton.setAlignmentX(1f);
+		emoteButton.setAlignmentY(0.5f);
+		// Container paints its children from the last-added backward, so the first
+		// component added ends up on top - emoteButton needs to go first so it's visible
+		// in front of messageField rather than hidden behind it.
+		fieldStack.add(emoteButton);
+		fieldStack.add(messageField);
 
 		sendButton = new PillButton("Chat", ACCENT, ACCENT_HOVER);
 		sendButton.addActionListener(e -> handleSend());
 
-		JPanel sendButtons = new JPanel(new BorderLayout(6, 0));
-		sendButtons.setOpaque(false);
-		sendButtons.add(emoteButton, BorderLayout.WEST);
-		sendButtons.add(sendButton, BorderLayout.EAST);
-
-		sendRow.add(messageField, BorderLayout.CENTER);
-		sendRow.add(sendButtons, BorderLayout.EAST);
+		sendRow.add(fieldStack, BorderLayout.CENTER);
+		sendRow.add(sendButton, BorderLayout.EAST);
 
 		add(topContainer, BorderLayout.NORTH);
 		add(scrollPane, BorderLayout.CENTER);
@@ -381,10 +401,7 @@ public class TwitchSidePanel extends PluginPanel
 
 			ChatMessageRowPanel row = new ChatMessageRowPanel(message, colorUsernames, showTimestamps,
 				emoteIcons, badgeIcons, myUsername, this::startReplyTo);
-
-			// The trailing glue component must stay last, so insert new rows just
-			// before it rather than appending after.
-			messageListPanel.add(row, messageListPanel.getComponentCount() - 1);
+			insertRow(row);
 
 			while (messageListPanel.getComponentCount() - 1 > maxMessages)
 			{
@@ -406,6 +423,30 @@ public class TwitchSidePanel extends PluginPanel
 			// preserve scroll position if the user has scrolled up to read history.
 			scrollPane.getVerticalScrollBar().setValue(scrollPane.getVerticalScrollBar().getMaximum());
 		});
+	}
+
+	/**
+	 * Appends a plugin-generated notice - e.g. "Connected to #channel" - styled distinctly
+	 * from a real chat message (see {@link SystemMessageRowPanel}) so it reads as a system
+	 * line, most usefully as a visible marker in the feed itself of exactly when a channel
+	 * switch/reconnect happened, not just in the status line above the feed.
+	 */
+	public void appendSystemMessage(String text)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			insertRow(new SystemMessageRowPanel(text));
+			messageListPanel.revalidate();
+			messageListPanel.repaint();
+			scrollPane.validate();
+			scrollPane.getVerticalScrollBar().setValue(scrollPane.getVerticalScrollBar().getMaximum());
+		});
+	}
+
+	/** The trailing glue component must stay last, so insert new rows just before it. */
+	private void insertRow(Component row)
+	{
+		messageListPanel.add(row, messageListPanel.getComponentCount() - 1);
 	}
 
 	public void clearMessages()
