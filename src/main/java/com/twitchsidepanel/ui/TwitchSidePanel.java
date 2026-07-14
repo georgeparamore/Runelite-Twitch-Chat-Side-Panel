@@ -5,6 +5,7 @@ import com.twitchsidepanel.twitch.TwitchSubEvent;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.Font;
 import java.util.Map;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -13,15 +14,16 @@ import javax.swing.ImageIcon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
-import javax.swing.JTextField;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import net.runelite.client.ui.PluginPanel;
 
 /**
- * Party-Hub-style side panel that shows Twitch chat as a scrolling message feed instead
- * of the official Twitch plugin's chatbox-PM format. Only ever connects to the channel
- * configured in the plugin's settings (your own channel) - there is no way to type in and
- * join an arbitrary channel from the panel itself.
+ * Side panel that shows Twitch chat as a scrolling message feed, styled to match Twitch's
+ * own chat window as closely as a Swing side panel reasonably can, instead of the official
+ * Twitch plugin's chatbox-PM format. Only ever connects to the channel configured in the
+ * plugin's settings (your own channel) - there is no way to type in and join an arbitrary
+ * channel from the panel itself.
  * <p>
  * Reading chat works with no login. Logging in with Twitch (device code flow) additionally
  * unlocks sending messages.
@@ -50,8 +52,12 @@ public class TwitchSidePanel extends PluginPanel
 		LOGGED_IN
 	}
 
-	private static final Color BACKGROUND = new Color(0x1b, 0x18, 0x24);
-	private static final Color CARD_BACKGROUND = new Color(0x2a, 0x24, 0x38);
+	private static final Color BACKGROUND = new Color(0x0e, 0x0e, 0x12);
+	private static final Color TAB_BAR_BACKGROUND = new Color(0x17, 0x17, 0x1d);
+	private static final Color DIVIDER = new Color(0x26, 0x26, 0x2e);
+	private static final Color MUTED_TEXT = new Color(0x8a, 0x8a, 0x95);
+	private static final Color ACCENT = new Color(0x91, 0x46, 0xff);
+	private static final Color ACCENT_HOVER = new Color(0xa8, 0x6c, 0xff);
 
 	private final JLabel channelLabel;
 	private final PillButton connectButton;
@@ -61,7 +67,7 @@ public class TwitchSidePanel extends PluginPanel
 	private final SubGiftCarouselPanel subGiftCarousel;
 	private final JPanel messageListPanel;
 	private final JScrollPane scrollPane;
-	private final JTextField messageField;
+	private final PlaceholderTextField messageField;
 	private final PillButton sendButton;
 	private final JPanel sendRow;
 
@@ -83,7 +89,7 @@ public class TwitchSidePanel extends PluginPanel
 
 		setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
 		setBackground(BACKGROUND);
-		setLayout(new BorderLayout(0, 8));
+		setLayout(new BorderLayout());
 
 		JPanel header = new JPanel();
 		header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
@@ -92,25 +98,26 @@ public class TwitchSidePanel extends PluginPanel
 
 		JLabel title = new JLabel("Twitch Chat");
 		title.setForeground(Color.WHITE);
-		title.setFont(title.getFont().deriveFont(java.awt.Font.BOLD, 16f));
+		title.setFont(title.getFont().deriveFont(Font.BOLD, 16f));
 		title.setAlignmentX(LEFT_ALIGNMENT);
 
 		JPanel connectRow = new JPanel(new BorderLayout(6, 0));
 		connectRow.setBackground(BACKGROUND);
 		connectRow.setAlignmentX(LEFT_ALIGNMENT);
 		connectRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+		connectRow.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
 
 		channelLabel = new JLabel();
-		channelLabel.setForeground(Color.LIGHT_GRAY);
+		channelLabel.setForeground(MUTED_TEXT);
 
-		connectButton = new PillButton("Connect", new Color(0x91, 0x46, 0xff), new Color(0xa8, 0x6c, 0xff));
+		connectButton = new PillButton("Connect", ACCENT, ACCENT_HOVER);
 		connectButton.addActionListener(e -> handleConnectButton());
 
 		connectRow.add(channelLabel, BorderLayout.CENTER);
 		connectRow.add(connectButton, BorderLayout.EAST);
 
 		statusLabel = new JLabel("Not connected");
-		statusLabel.setForeground(Color.GRAY);
+		statusLabel.setForeground(MUTED_TEXT);
 		statusLabel.setFont(statusLabel.getFont().deriveFont(11f));
 		statusLabel.setAlignmentX(LEFT_ALIGNMENT);
 		statusLabel.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0));
@@ -122,7 +129,7 @@ public class TwitchSidePanel extends PluginPanel
 		authRow.setBorder(BorderFactory.createEmptyBorder(6, 0, 0, 0));
 
 		authStatusLabel = new JLabel("Not logged in");
-		authStatusLabel.setForeground(Color.LIGHT_GRAY);
+		authStatusLabel.setForeground(MUTED_TEXT);
 		authStatusLabel.setFont(authStatusLabel.getFont().deriveFont(11f));
 
 		authButton = new PillButton("Log in with Twitch", new Color(0x6a, 0x3d, 0xc7), new Color(0x81, 0x54, 0xdd));
@@ -132,10 +139,19 @@ public class TwitchSidePanel extends PluginPanel
 		authRow.add(authButton, BorderLayout.EAST);
 
 		header.add(title);
-		header.add(Box.createVerticalStrut(8));
 		header.add(connectRow);
 		header.add(statusLabel);
 		header.add(authRow);
+
+		JPanel tabBar = new JPanel(new BorderLayout());
+		tabBar.setBackground(TAB_BAR_BACKGROUND);
+		tabBar.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createMatteBorder(1, 0, 1, 0, DIVIDER),
+			BorderFactory.createEmptyBorder(6, 0, 6, 0)));
+		JLabel tabLabel = new JLabel("STREAM CHAT", SwingConstants.CENTER);
+		tabLabel.setForeground(MUTED_TEXT);
+		tabLabel.setFont(tabLabel.getFont().deriveFont(Font.BOLD, 11f));
+		tabBar.add(tabLabel, BorderLayout.CENTER);
 
 		subGiftCarousel = new SubGiftCarouselPanel();
 
@@ -143,11 +159,13 @@ public class TwitchSidePanel extends PluginPanel
 		topContainer.setLayout(new BoxLayout(topContainer, BoxLayout.Y_AXIS));
 		topContainer.setBackground(BACKGROUND);
 		topContainer.add(header);
+		topContainer.add(tabBar);
 		topContainer.add(subGiftCarousel);
 
 		messageListPanel = new JPanel();
 		messageListPanel.setLayout(new BoxLayout(messageListPanel, BoxLayout.Y_AXIS));
 		messageListPanel.setBackground(BACKGROUND);
+		messageListPanel.setBorder(BorderFactory.createEmptyBorder(6, 0, 6, 0));
 
 		scrollPane = new JScrollPane(messageListPanel);
 		scrollPane.setBorder(BorderFactory.createEmptyBorder());
@@ -155,16 +173,21 @@ public class TwitchSidePanel extends PluginPanel
 		scrollPane.getViewport().setBackground(BACKGROUND);
 		scrollPane.getVerticalScrollBar().setUnitIncrement(16);
 
-		sendRow = new JPanel(new BorderLayout(6, 0));
+		sendRow = new JPanel(new BorderLayout(8, 0));
 		sendRow.setBackground(BACKGROUND);
-		sendRow.setBorder(BorderFactory.createEmptyBorder(8, 10, 10, 10));
+		sendRow.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createMatteBorder(1, 0, 0, 0, DIVIDER),
+			BorderFactory.createEmptyBorder(8, 10, 10, 10)));
 		sendRow.setVisible(false);
 
-		messageField = new JTextField();
-		messageField.setToolTipText("Send a message");
+		messageField = new PlaceholderTextField("Send a message");
+		messageField.setBackground(new Color(0x1e, 0x1e, 0x26));
+		messageField.setForeground(Color.WHITE);
+		messageField.setCaretColor(Color.WHITE);
+		messageField.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
 		messageField.addActionListener(e -> handleSend());
 
-		sendButton = new PillButton("Chat", new Color(0x91, 0x46, 0xff), new Color(0xa8, 0x6c, 0xff));
+		sendButton = new PillButton("Chat", ACCENT, ACCENT_HOVER);
 		sendButton.addActionListener(e -> handleSend());
 
 		sendRow.add(messageField, BorderLayout.CENTER);
@@ -252,7 +275,7 @@ public class TwitchSidePanel extends PluginPanel
 		SwingUtilities.invokeLater(() ->
 		{
 			statusLabel.setText(text);
-			statusLabel.setForeground(isError ? new Color(0xff, 0x6b, 0x6b) : Color.GRAY);
+			statusLabel.setForeground(isError ? new Color(0xff, 0x6b, 0x6b) : MUTED_TEXT);
 		});
 	}
 
@@ -262,7 +285,7 @@ public class TwitchSidePanel extends PluginPanel
 		SwingUtilities.invokeLater(() ->
 		{
 			authState = AuthState.LOGGED_OUT;
-			authStatusLabel.setForeground(Color.LIGHT_GRAY);
+			authStatusLabel.setForeground(MUTED_TEXT);
 			authStatusLabel.setText("Not logged in");
 			authButton.setText("Log in with Twitch");
 			sendRow.setVisible(false);
@@ -275,7 +298,7 @@ public class TwitchSidePanel extends PluginPanel
 		SwingUtilities.invokeLater(() ->
 		{
 			authState = AuthState.WAITING_FOR_CODE;
-			authStatusLabel.setForeground(Color.LIGHT_GRAY);
+			authStatusLabel.setForeground(MUTED_TEXT);
 			authStatusLabel.setText("Go to " + verificationUri + " and enter: " + userCode);
 			authButton.setText("Cancel");
 		});
@@ -298,7 +321,7 @@ public class TwitchSidePanel extends PluginPanel
 		SwingUtilities.invokeLater(() ->
 		{
 			authState = AuthState.LOGGED_IN;
-			authStatusLabel.setForeground(Color.LIGHT_GRAY);
+			authStatusLabel.setForeground(MUTED_TEXT);
 			authStatusLabel.setText("Logged in as " + username);
 			authButton.setText("Log out");
 			updateSendRowEnabled();
@@ -319,9 +342,6 @@ public class TwitchSidePanel extends PluginPanel
 		{
 			ChatMessageRowPanel row = new ChatMessageRowPanel(message, colorUsernames, showTimestamps,
 				emoteIcons, badgeIcons);
-			row.setBorder(BorderFactory.createCompoundBorder(
-				BorderFactory.createEmptyBorder(0, 0, 4, 0),
-				row.getBorder()));
 
 			messageListPanel.add(row);
 

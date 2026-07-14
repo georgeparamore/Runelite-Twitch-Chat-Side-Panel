@@ -19,8 +19,8 @@ import javax.swing.SwingUtilities;
  */
 public class SubGiftCarouselPanel extends JPanel
 {
-	private static final Color BACKGROUND = new Color(0x1b, 0x18, 0x24);
-	private static final Color CHIP_BACKGROUND = new Color(0x3a, 0x2f, 0x4d);
+	private static final Color BACKGROUND = new Color(0x0e, 0x0e, 0x12);
+	private static final Color CHIP_BACKGROUND = new Color(0x26, 0x1f, 0x33);
 	private static final int MAX_CHIPS = 30;
 
 	private final JPanel chipsRow;
