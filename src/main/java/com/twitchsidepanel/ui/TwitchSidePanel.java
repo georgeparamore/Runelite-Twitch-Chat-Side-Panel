@@ -217,7 +217,7 @@ public class TwitchSidePanel extends PluginPanel
 		messageField.setCaretColor(Color.WHITE);
 		// Extra right padding reserves room for the emote button overlaid on top of the
 		// field below, so typed text never runs underneath it.
-		messageField.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 22));
+		messageField.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 26));
 		messageField.addActionListener(e -> handleSend());
 		new MentionAutocomplete(messageField, () -> recentUsernames);
 

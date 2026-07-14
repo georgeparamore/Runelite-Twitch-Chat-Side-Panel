@@ -34,7 +34,7 @@ public class EmoteButton extends JButton
 		setContentAreaFilled(true);
 		setFocusPainted(false);
 		setBorderPainted(false);
-		setPreferredSize(new Dimension(18, 18));
+		setPreferredSize(new Dimension(22, 22));
 		setToolTipText("Emotes");
 		// Being nested inside a JTextField (a null cursor inherits the parent's), this
 		// would otherwise show the field's text-editing I-beam cursor instead of a normal
@@ -52,12 +52,15 @@ public class EmoteButton extends JButton
 		g2.fillRect(0, 0, getWidth(), getHeight());
 
 		g2.setColor(getModel().isRollover() ? ICON_HOVER_COLOR : ICON_COLOR);
-		int cx = getWidth() / 2;
+		// Nudges the glyph itself a couple pixels right of dead-center within the
+		// button's own bounds, since the button's left side already backs onto the
+		// typed-text area - visually balances it closer to the field's true right edge.
+		int cx = getWidth() / 2 + 2;
 		int cy = getHeight() / 2;
-		g2.drawOval(cx - 5, cy - 5, 10, 10);
-		g2.fillRect(cx - 3, cy - 1, 1, 1);
-		g2.fillRect(cx + 2, cy - 1, 1, 1);
-		g2.drawArc(cx - 3, cy - 1, 6, 4, 200, 140);
+		g2.drawOval(cx - 6, cy - 6, 12, 12);
+		g2.fillRect(cx - 4, cy - 1, 2, 2);
+		g2.fillRect(cx + 2, cy - 1, 2, 2);
+		g2.drawArc(cx - 4, cy - 1, 8, 5, 200, 140);
 
 		g2.dispose();
 	}
