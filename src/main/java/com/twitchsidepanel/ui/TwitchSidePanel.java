@@ -6,9 +6,11 @@ import com.twitchsidepanel.twitch.TwitchSubEvent;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Insets;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -72,6 +74,7 @@ public class TwitchSidePanel extends PluginPanel
 	private static final Color ACCENT_HOVER = new Color(0xa8, 0x6c, 0xff);
 
 	private final JLabel channelLabel;
+	private final OpenChannelButton openChannelButton;
 	private final PillButton connectButton;
 	private final JLabel statusLabel;
 	private final JLabel authStatusLabel;
@@ -89,6 +92,7 @@ public class TwitchSidePanel extends PluginPanel
 	private boolean channelConfigured;
 	private AuthState authState = AuthState.LOGGED_OUT;
 	private volatile String myUsername;
+	private volatile String currentChannel = "";
 
 	// The currently-open emote picker popup, if any - lets a second click on the emote
 	// button close it again instead of always opening a new one on top of itself.
@@ -134,10 +138,18 @@ public class TwitchSidePanel extends PluginPanel
 		channelLabel = new JLabel();
 		channelLabel.setForeground(MUTED_TEXT);
 
+		openChannelButton = new OpenChannelButton(BACKGROUND);
+		openChannelButton.addActionListener(e -> openChannelInBrowser());
+
+		JPanel channelNameRow = new JPanel(new BorderLayout(2, 0));
+		channelNameRow.setOpaque(false);
+		channelNameRow.add(channelLabel, BorderLayout.CENTER);
+		channelNameRow.add(openChannelButton, BorderLayout.EAST);
+
 		connectButton = new PillButton("Connect", ACCENT, ACCENT_HOVER);
 		connectButton.addActionListener(e -> handleConnectButton());
 
-		connectRow.add(channelLabel, BorderLayout.CENTER);
+		connectRow.add(channelNameRow, BorderLayout.CENTER);
 		connectRow.add(connectButton, BorderLayout.EAST);
 
 		statusLabel = new JLabel("Not connected");
@@ -339,14 +351,42 @@ public class TwitchSidePanel extends PluginPanel
 	{
 		SwingUtilities.invokeLater(() ->
 		{
-			channelConfigured = channel != null && !channel.trim().isEmpty();
-			channelLabel.setText(channelConfigured ? "#" + channel.trim() : "No channel set");
+			currentChannel = channel == null ? "" : channel.trim();
+			channelConfigured = !currentChannel.isEmpty();
+			channelLabel.setText(channelConfigured ? "#" + currentChannel : "No channel set");
 			connectButton.setEnabled(channelConfigured || connected);
+			openChannelButton.setEnabled(channelConfigured);
 			if (!channelConfigured)
 			{
 				setStatus("Set your channel in the plugin settings", true);
 			}
 		});
+	}
+
+	/**
+	 * Opens the configured channel's Twitch page in the system's default browser - works
+	 * regardless of connection state, since it's just a URL, not anything the plugin's own
+	 * chat connection is involved in.
+	 */
+	private void openChannelInBrowser()
+	{
+		String channel = currentChannel;
+		if (channel.isEmpty())
+		{
+			return;
+		}
+
+		try
+		{
+			if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE))
+			{
+				Desktop.getDesktop().browse(URI.create("https://www.twitch.tv/" + channel));
+			}
+		}
+		catch (Exception ignored)
+		{
+			// Best-effort - nothing else to do if the platform can't open a browser.
+		}
 	}
 
 	public void setConnected(boolean connected)

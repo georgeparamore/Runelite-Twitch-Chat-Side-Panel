@@ -18,7 +18,8 @@ setup needed, just click **Log in with Twitch**.
 2. Open the plugin's side panel (toolbar icon) and click **Connect** to start reading
    chat - no login needed for this part. The feed shows a "Connected to #channel" notice
    so it's always clear which channel you're actually looking at, especially useful after
-   switching channels in settings and reconnecting.
+   switching channels in settings and reconnecting. The small external-link icon next to
+   the channel name opens that channel's Twitch page in your browser.
 3. To also send messages, click **Log in with Twitch** in the panel and follow the
    code/link it shows you (it also tries to open your browser to it automatically). Once
    logged in, a message box appears at the bottom of the panel, with an emote button
