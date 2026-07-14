@@ -7,6 +7,8 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -81,6 +83,12 @@ public class TwitchSidePanel extends PluginPanel
 	private boolean connected;
 	private boolean channelConfigured;
 	private AuthState authState = AuthState.LOGGED_OUT;
+	private volatile String myUsername;
+
+	// Most-recently-seen chatters (most recent first), for the "@" mention autocomplete -
+	// capped so a long-running session doesn't grow this unbounded.
+	private static final int MAX_RECENT_USERNAMES = 300;
+	private final List<String> recentUsernames = new ArrayList<>();
 
 	public TwitchSidePanel(Handlers handlers, String channel)
 	{
@@ -203,6 +211,7 @@ public class TwitchSidePanel extends PluginPanel
 		messageField.setCaretColor(Color.WHITE);
 		messageField.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
 		messageField.addActionListener(e -> handleSend());
+		new MentionAutocomplete(messageField, () -> recentUsernames);
 
 		emoteButton = new EmoteButton(new Color(0x2a, 0x2a, 0x33), new Color(0x38, 0x38, 0x44));
 		emoteButton.addActionListener(e -> handlers.onEmotePickerClicked());
@@ -314,6 +323,7 @@ public class TwitchSidePanel extends PluginPanel
 			authStatusLabel.setText("Not logged in");
 			authButton.setText("Log in with Twitch");
 			sendRow.setVisible(false);
+			myUsername = null;
 		});
 	}
 
@@ -338,6 +348,7 @@ public class TwitchSidePanel extends PluginPanel
 			authStatusLabel.setText(message);
 			authButton.setText("Log in with Twitch");
 			sendRow.setVisible(false);
+			myUsername = null;
 		});
 	}
 
@@ -349,6 +360,7 @@ public class TwitchSidePanel extends PluginPanel
 			authStatusLabel.setForeground(MUTED_TEXT);
 			authStatusLabel.setText("Logged in as " + username);
 			authButton.setText("Log out");
+			myUsername = username;
 			updateSendRowEnabled();
 		});
 	}
@@ -365,8 +377,10 @@ public class TwitchSidePanel extends PluginPanel
 	{
 		SwingUtilities.invokeLater(() ->
 		{
+			recordUsername(message.displayName);
+
 			ChatMessageRowPanel row = new ChatMessageRowPanel(message, colorUsernames, showTimestamps,
-				emoteIcons, badgeIcons);
+				emoteIcons, badgeIcons, myUsername, this::startReplyTo);
 
 			// The trailing glue component must stay last, so insert new rows just
 			// before it rather than appending after.
@@ -426,6 +440,36 @@ public class TwitchSidePanel extends PluginPanel
 		String withTrailingSpace = current.isEmpty() || current.endsWith(" ") ? current : current + " ";
 		messageField.setText(withTrailingSpace + emoteName + " ");
 		messageField.requestFocusInWindow();
+	}
+
+	/**
+	 * Called (from the EDT, since it's the message-list swing thread already) whenever a
+	 * message is appended, so the "@" mention autocomplete has a live list of who's
+	 * actually in chat right now to suggest from. Most-recent-first, deduplicated
+	 * case-insensitively (a chatter typing again just moves back to the front) and capped
+	 * so a long-running session doesn't grow this unbounded.
+	 */
+	private void recordUsername(String username)
+	{
+		recentUsernames.removeIf(existing -> existing.equalsIgnoreCase(username));
+		recentUsernames.add(0, username);
+		if (recentUsernames.size() > MAX_RECENT_USERNAMES)
+		{
+			recentUsernames.remove(recentUsernames.size() - 1);
+		}
+	}
+
+	/**
+	 * Starts a reply to {@code username} - the same click-a-name-to-@mention gesture
+	 * Twitch's own chat offers - by replacing the message field's contents with
+	 * "@username ". Triggered by clicking a sender's name in {@link ChatMessageRowPanel}.
+	 */
+	private void startReplyTo(String username)
+	{
+		String text = "@" + username + " ";
+		messageField.setText(text);
+		messageField.requestFocusInWindow();
+		messageField.setCaretPosition(text.length());
 	}
 
 	/**

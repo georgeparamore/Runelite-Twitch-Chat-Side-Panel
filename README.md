@@ -65,6 +65,14 @@ client secret is involved anywhere in this flow), it just identifies "which app 
 asking." Each user's login produces their own personal token; nothing is shared between
 users except this one identifier.
 
+**@ mentions**: typing "@" in the message field pops up a filtered list of recently-seen
+chatters to complete from (arrow keys / Enter / Tab to pick, Escape to dismiss, or click
+one) - see `MentionAutocomplete`. A message that mentions your username (with or without
+the "@", case-insensitive) is highlighted the way Twitch's own chat highlights mentions.
+Clicking any sender's name in the feed starts a reply to them by setting the message field
+to "@Username " - the same click-to-@mention gesture Twitch's chat offers. See
+`ChatMessageRowPanel`.
+
 **Emote picker**: the emote button next to **Chat** fetches the current channel's own
 emotes (subscriber/follower) plus Twitch's global set via Helix
 (`GET /helix/chat/emotes?broadcaster_id=...` and `/helix/chat/emotes/global`) and shows
