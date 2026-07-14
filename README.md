@@ -121,7 +121,7 @@ account:
   real message (confirmed with a broadcaster badge).
 
 This live testing (including on a real Mac, not just headless sandbox testing) caught and
-fixed seven real bugs before they reached most users:
+fixed eight real bugs before they reached most users:
 
 1. The original raw-IRC-socket transport (`irc.chat.twitch.tv:6697`) had no connect
    timeout, so an unreachable network left the panel stuck on "Connecting..." forever.
@@ -168,6 +168,14 @@ fixed seven real bugs before they reached most users:
    re-layout that grows the scrollbar's max to fit the new row happens later on the event
    queue, so the read was always one message behind. Fixed by calling `validate()` (which
    re-lays-out synchronously) before reading the scrollbar's max.
+8. Every pill button (Chat, Connect/Disconnect, Log in/out) rendered as plain gray chrome
+   instead of Twitch's purple, despite the color being set correctly in code.
+   `PillButton.paintComponent()` painted its own rounded purple fill, then called
+   `super.paintComponent()` to draw the button's text - but that call runs the
+   look-and-feel's own opaque-background fill first (using the button's plain
+   `getBackground()`, never the accent color passed into the constructor), silently
+   painting over the rounded purple fill with a flat rectangular default-gray one. Fixed
+   by painting the button's text directly instead of delegating to the look-and-feel.
 
 The sub/gift carousel's `USERNOTICE` parsing (`parseUserNotice`) is covered by 7 unit
 tests (`TwitchChatClientTest`) built from Twitch's documented tag format, since there's
