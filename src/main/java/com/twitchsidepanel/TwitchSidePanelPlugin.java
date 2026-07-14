@@ -9,8 +9,11 @@ import com.twitchsidepanel.twitch.TwitchChatListener;
 import com.twitchsidepanel.twitch.TwitchMessage;
 import com.twitchsidepanel.ui.TwitchPanelIcon;
 import com.twitchsidepanel.ui.TwitchSidePanel;
+import java.awt.Color;
 import java.awt.image.BufferedImage;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import javax.inject.Inject;
 import javax.swing.ImageIcon;
@@ -56,6 +59,13 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 	private final EmoteImageCache emoteImageCache = new EmoteImageCache();
 	private final BadgeIconCache badgeIconCache = new BadgeIconCache();
 	private final TwitchAuthService authService = new TwitchAuthService();
+
+	// Twitch's chat gateway NAKs the IRCv3 "echo-message" capability (confirmed live),
+	// so a message you send is never echoed back over IRC - selfColor/selfBadges (from
+	// the USERSTATE Twitch sends on an authenticated connection) let a locally-echoed
+	// copy of a sent message look the same as if it had arrived from the server.
+	private volatile Color selfColor;
+	private volatile List<TwitchMessage.BadgeRef> selfBadges = Collections.emptyList();
 
 	@Provides
 	TwitchSidePanelConfig getConfig(final ConfigManager configManager)
@@ -107,6 +117,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 			public void onSendMessage(String text)
 			{
 				chatClient.sendMessage(text);
+				echoSentMessageLocally(text);
 			}
 		}, config.channel());
 
@@ -291,14 +302,51 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 	@Override
 	public void onMessage(TwitchMessage message)
 	{
+		renderMessage(message);
+	}
+
+	@Override
+	public void onSelfUserState(Color color, List<TwitchMessage.BadgeRef> badges)
+	{
+		selfColor = color;
+		selfBadges = badges;
+	}
+
+	/**
+	 * Renders a message you just sent yourself, since Twitch never echoes it back over
+	 * IRC (see the NAK note near {@link #selfColor}). Runs the icon lookups on a
+	 * background thread, same as a normal incoming message, so a cache-miss network
+	 * fetch never blocks the button click that triggered this.
+	 */
+	private void echoSentMessageLocally(String text)
+	{
+		String username = config.loggedInUsername();
+		if (username.isEmpty())
+		{
+			return;
+		}
+
+		Thread thread = new Thread(() ->
+			renderMessage(new TwitchMessage(username, text, selfColor, System.currentTimeMillis(),
+				selfBadges, Collections.emptyList())),
+			"twitch-local-echo");
+		thread.setDaemon(true);
+		thread.start();
+	}
+
+	/**
+	 * Resolves emote/badge icons (blocking on a network fetch for any not already
+	 * cached) and hands the message off to the panel to render. Must be called from a
+	 * background thread, never the Swing EDT - {@code onMessage} already runs on the
+	 * WebSocket listener's thread, and {@link #echoSentMessageLocally} hops onto one.
+	 */
+	private void renderMessage(TwitchMessage message)
+	{
 		if (panel == null)
 		{
 			return;
 		}
 
-		// Fetching runs here (on the WebSocket listener's background thread, not the
-		// Swing EDT) so the UI thread never blocks on network I/O - only cache misses
-		// pay the fetch cost, every repeat use of an emote is instant afterwards.
 		Map<String, ImageIcon> emoteIcons = new HashMap<>();
 		for (TwitchMessage.EmoteRef emote : message.emotes)
 		{

@@ -75,6 +75,13 @@ authenticated Helix API call (`GET /helix/chat/badges/global` and
 `BadgeIconCache`. A failed/missing badge icon never breaks the message, it just renders
 without one.
 
+**Your own sent messages**: Twitch's chat gateway rejects (`NAK`s) the standard IRCv3
+`echo-message` capability - confirmed live, not just documented behavior - so a message
+you send is never sent back to you over IRC the way it would be on a normal IRC server.
+Instead, `TwitchSidePanelPlugin` renders a local copy of what you just sent immediately,
+styled with your real name color and badges (captured from the `USERSTATE` message
+Twitch sends on an authenticated connection).
+
 ## Building / running locally
 
 ```
@@ -85,17 +92,23 @@ Logs in with your own RuneLite account; enable "Twitch Chat Side Panel" in the p
 
 ## Status
 
-Verified live end-to-end against a real RuneLite client (headless, via Xvfb) connected to
-an actual live, high-traffic Twitch channel:
+Verified fully live end-to-end against a real RuneLite client (headless, via Xvfb), a
+real registered Twitch application, and the developer's real Twitch account:
 
-- Chat feed renders correctly - display names/colors/timestamps, auto-scroll.
+- Chat feed renders correctly against a live, high-traffic channel - display
+  names/colors/timestamps, auto-scroll.
 - Emotes render as real inline images (initially discovered they were rendering at their
   native 56x56 size and blowing up row heights - fixed by downscaling to 20px).
-- The login flow's full HTTP plumbing was exercised against Twitch's real OAuth
-  endpoints, including the error path (confirmed with a deliberately invalid Client ID -
-  got back and correctly displayed "Twitch rejected the login request (HTTP 400)").
+- OAuth device-code login completed for real: code issued, approved in a real browser,
+  token retrieved, username validated ("Logged in as ...") - not just the error path.
+- Token persistence confirmed - restarting the client silently logged back in from the
+  stored token with no need to redo the device code flow.
+- A real message was sent from the panel to a real live channel and rendered correctly,
+  styled with the sender's actual Twitch name color.
+- Badge icons render for real - fetched from Twitch's Helix API and displayed next to a
+  real message (confirmed with a broadcaster badge).
 
-This live testing caught and fixed two real bugs before they reached anyone:
+This live testing caught and fixed three real bugs before they reached anyone:
 
 1. The original raw-IRC-socket transport (`irc.chat.twitch.tv:6697`) had no connect
    timeout, so an unreachable network left the panel stuck on "Connecting..." forever.
@@ -106,20 +119,15 @@ This live testing caught and fixed two real bugs before they reached anyone:
    became visible. Root cause: `PluginPanel`'s default constructor wraps all content in
    its own internal `DynamicGridLayout` + `JScrollPane`, which silently conflicted with
    this panel's own layout. Fixed by calling `super(false)` to opt out of that wrapping.
+3. A message sent from the panel never appeared in the feed even though it sent
+   successfully - Twitch's chat gateway actually `NAK`s the IRCv3 `echo-message`
+   capability (confirmed live, an initial fix attempt requesting it was silently
+   rejected by Twitch), so there is no server echo to rely on. Fixed with a local echo -
+   see "Your own sent messages" above.
 
-Badge icon plumbing (Helix calls, icon fetch/scale/cache) is built and passes a
-regression test with no credentials configured (silently renders no icons rather than
-breaking chat, as designed) - see `BadgeIconCache`.
-
-**Not yet verified** (needs a real Twitch app Client ID, which this sandbox doesn't have):
-
-- An actual successful login (the device-code request/error path works; the happy path
-  where Twitch approves the code has not been exercised).
-- Sending a real message end-to-end.
-- Badge icons actually rendering (the no-credentials fallback path is verified; the
-  real Helix fetch is not).
-- Sub/gift carousel (planned, not yet built - needs Twitch's EventSub, a separate
-  real-time system from IRC).
-- Long-running sessions (hours), very high sustained chat volume, non-Latin channel
-  names, token refresh (the plugin does not yet refresh an expired token - you'd need to
-  log in again).
+**Not yet verified**: sub/gift carousel (not started - needs Twitch's EventSub, a
+separate real-time system from IRC, and was always the lowest-priority, most speculative
+part of the original design), long-running sessions (hours), very high sustained chat
+volume, non-Latin channel names, token refresh (the plugin does not yet refresh an
+expired token - you'd need to log in again; unclear yet how long a device-flow token
+actually lasts before that matters in practice).

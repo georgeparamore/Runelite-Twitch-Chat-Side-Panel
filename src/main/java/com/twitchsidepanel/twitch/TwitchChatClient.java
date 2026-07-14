@@ -127,9 +127,13 @@ public class TwitchChatClient
 			webSocket = ws;
 
 			// Each WebSocket text frame is one IRC command - no trailing CRLF needed.
+			// Twitch's chat gateway NAKs the standard IRCv3 "echo-message" capability
+			// (confirmed live), so a message you send is never echoed back to you over
+			// IRC - the caller is responsible for reflecting a sent message locally.
+			boolean authenticated = oauthAccessToken != null && nick != null;
 			ws.sendText("CAP REQ :twitch.tv/tags twitch.tv/commands", true);
 
-			if (oauthAccessToken != null && nick != null)
+			if (authenticated)
 			{
 				ws.sendText("PASS oauth:" + oauthAccessToken, true);
 				ws.sendText("NICK " + nick.toLowerCase(), true);
@@ -217,7 +221,43 @@ public class TwitchChatClient
 			{
 				listener.onMessage(message);
 			}
+			return;
 		}
+
+		if (line.contains("USERSTATE #" + channel))
+		{
+			Map<String, String> tags = parseTags(line);
+			listener.onSelfUserState(parseColor(tags.get("color")), parseBadges(tags.get("badges")));
+		}
+	}
+
+	/**
+	 * Parses the {@code @key=value;key=value ...} IRCv3 tag prefix off the front of a
+	 * line, if present. Returns an empty map for a line with no tags.
+	 */
+	private Map<String, String> parseTags(String line)
+	{
+		Map<String, String> tags = new HashMap<>();
+		if (!line.startsWith("@"))
+		{
+			return tags;
+		}
+
+		int spaceIndex = line.indexOf(' ');
+		if (spaceIndex < 0)
+		{
+			return tags;
+		}
+
+		for (String tag : line.substring(1, spaceIndex).split(";"))
+		{
+			int eq = tag.indexOf('=');
+			if (eq > 0)
+			{
+				tags.put(tag.substring(0, eq), tag.substring(eq + 1));
+			}
+		}
+		return tags;
 	}
 
 	/**
@@ -226,28 +266,8 @@ public class TwitchChatClient
 	 */
 	private TwitchMessage parsePrivmsg(String line)
 	{
-		Map<String, String> tags = new HashMap<>();
-		String rest = line;
-
-		if (rest.startsWith("@"))
-		{
-			int spaceIndex = rest.indexOf(' ');
-			if (spaceIndex < 0)
-			{
-				return null;
-			}
-			String tagSection = rest.substring(1, spaceIndex);
-			rest = rest.substring(spaceIndex + 1);
-
-			for (String tag : tagSection.split(";"))
-			{
-				int eq = tag.indexOf('=');
-				if (eq > 0)
-				{
-					tags.put(tag.substring(0, eq), tag.substring(eq + 1));
-				}
-			}
-		}
+		Map<String, String> tags = parseTags(line);
+		String rest = line.startsWith("@") ? line.substring(line.indexOf(' ') + 1) : line;
 
 		int privmsgIndex = rest.indexOf("PRIVMSG");
 		int messageStart = rest.indexOf(" :", privmsgIndex);
