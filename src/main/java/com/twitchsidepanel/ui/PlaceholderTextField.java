@@ -3,6 +3,7 @@ package com.twitchsidepanel.ui;
 import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.Insets;
 import java.awt.RenderingHints;
 import javax.swing.JTextField;
 
@@ -33,14 +34,16 @@ public class PlaceholderTextField extends JTextField
 		g2.setColor(new Color(0x8a, 0x8a, 0x95));
 		g2.setFont(getFont());
 
-		// Clip to the text area (excluding the right inset reserved for an overlaid
-		// button, if any) so a long placeholder truncates cleanly at that boundary
-		// instead of drawing underneath the button and getting visually cut mid-word.
-		java.awt.Insets insets = getInsets();
-		g2.setClip(insets.left, 0, Math.max(0, getWidth() - insets.left - insets.right), getHeight());
+		// Uses the field's margin, not its border insets - the margin is what actually
+		// reserves room for the overlaid emote button here (see the constructor call
+		// site), since border insets would instead push the button's own layout inward.
+		// Clipping to that area means a long placeholder truncates cleanly at the
+		// button's edge instead of drawing underneath it and getting visually cut off.
+		Insets margin = getMargin();
+		g2.setClip(margin.left, 0, Math.max(0, getWidth() - margin.left - margin.right), getHeight());
 
 		int textY = (getHeight() - g2.getFontMetrics().getHeight()) / 2 + g2.getFontMetrics().getAscent();
-		g2.drawString(placeholder, insets.left, textY);
+		g2.drawString(placeholder, margin.left, textY);
 		g2.dispose();
 	}
 }

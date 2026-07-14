@@ -52,10 +52,11 @@ public class EmoteButton extends JButton
 		g2.fillRect(0, 0, getWidth(), getHeight());
 
 		g2.setColor(getModel().isRollover() ? ICON_HOVER_COLOR : ICON_COLOR);
-		// Nudges the glyph itself a couple pixels right of dead-center within the
-		// button's own bounds, since the button's left side already backs onto the
-		// typed-text area - visually balances it closer to the field's true right edge.
-		int cx = getWidth() / 2 + 2;
+		// Anchored close to the button's own right edge (which itself sits flush against
+		// the field's true right edge - see the setMargin() note at the call site) rather
+		// than centered, so the glyph reads as tucked into the corner like Twitch's own
+		// embedded emote button instead of floating mid-button with dead space beside it.
+		int cx = getWidth() - 8;
 		int cy = getHeight() / 2;
 		g2.drawOval(cx - 6, cy - 6, 12, 12);
 		g2.fillRect(cx - 4, cy - 1, 2, 2);

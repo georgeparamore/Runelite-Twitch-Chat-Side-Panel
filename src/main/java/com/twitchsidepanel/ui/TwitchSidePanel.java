@@ -8,6 +8,7 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.Insets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -215,9 +216,14 @@ public class TwitchSidePanel extends PluginPanel
 		messageField.setBackground(fieldBackground);
 		messageField.setForeground(Color.WHITE);
 		messageField.setCaretColor(Color.WHITE);
-		// Extra right padding reserves room for the emote button overlaid on top of the
-		// field below, so typed text never runs underneath it.
-		messageField.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 26));
+		// Deliberately using setMargin() here, not setBorder() - a Border's insets are
+		// what BorderLayout consults to place child components, so reserving the emote
+		// button's space via the field's *border* was also pushing the button itself
+		// inward by that same amount, leaving a visible gap before the field's true right
+		// edge instead of sitting flush in the corner like Twitch's own embedded button.
+		// Margin only affects the text's own drawing area, leaving layout untouched.
+		messageField.setBorder(BorderFactory.createEmptyBorder());
+		messageField.setMargin(new Insets(6, 10, 6, 26));
 		messageField.addActionListener(e -> handleSend());
 		new MentionAutocomplete(messageField, () -> recentUsernames);
 
