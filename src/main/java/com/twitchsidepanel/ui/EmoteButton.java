@@ -1,6 +1,7 @@
 package com.twitchsidepanel.ui;
 
 import java.awt.Color;
+import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
@@ -33,8 +34,12 @@ public class EmoteButton extends JButton
 		setContentAreaFilled(true);
 		setFocusPainted(false);
 		setBorderPainted(false);
-		setPreferredSize(new Dimension(24, 24));
+		setPreferredSize(new Dimension(18, 18));
 		setToolTipText("Emotes");
+		// Being nested inside a JTextField (a null cursor inherits the parent's), this
+		// would otherwise show the field's text-editing I-beam cursor instead of a normal
+		// pointer while hovering the button.
+		setCursor(Cursor.getDefaultCursor());
 	}
 
 	@Override
@@ -49,10 +54,10 @@ public class EmoteButton extends JButton
 		g2.setColor(getModel().isRollover() ? ICON_HOVER_COLOR : ICON_COLOR);
 		int cx = getWidth() / 2;
 		int cy = getHeight() / 2;
-		g2.drawOval(cx - 7, cy - 7, 14, 14);
-		g2.fillOval(cx - 4, cy - 3, 2, 2);
-		g2.fillOval(cx + 2, cy - 3, 2, 2);
-		g2.drawArc(cx - 4, cy - 3, 8, 6, 200, 140);
+		g2.drawOval(cx - 5, cy - 5, 10, 10);
+		g2.fillRect(cx - 3, cy - 1, 1, 1);
+		g2.fillRect(cx + 2, cy - 1, 1, 1);
+		g2.drawArc(cx - 3, cy - 1, 6, 4, 200, 140);
 
 		g2.dispose();
 	}

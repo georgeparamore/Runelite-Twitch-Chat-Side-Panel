@@ -57,7 +57,12 @@ final class EmotePickerPopup
 		boolean anyEmotes = !emotes.channelEmotes.isEmpty() || !emotes.globalEmotes.isEmpty();
 		if (!anyEmotes)
 		{
-			JLabel empty = new JLabel("No emotes available");
+			// A successful fetch always includes at least Twitch's built-in global
+			// emotes, so a genuinely empty result here almost always means the fetch
+			// itself failed - most commonly a token issued before the picker's
+			// user:read:emotes scope was added, which needs a fresh login to fix.
+			JLabel empty = new JLabel("<html><body style='width:150px'>No emotes available."
+				+ " If you logged in before an update, try logging out and back in.</body></html>");
 			empty.setForeground(MUTED_TEXT);
 			empty.setBorder(BorderFactory.createEmptyBorder(12, 14, 12, 14));
 			popup.add(empty, BorderLayout.CENTER);

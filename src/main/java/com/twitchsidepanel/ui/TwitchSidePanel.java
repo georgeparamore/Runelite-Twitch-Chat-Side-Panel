@@ -208,13 +208,16 @@ public class TwitchSidePanel extends PluginPanel
 
 		Color fieldBackground = new Color(0x1e, 0x1e, 0x26);
 
-		messageField = new PlaceholderTextField("Send a message");
+		// The side panel is much narrower than Twitch's own chat box, which is where the
+		// full "Send a message" wording comes from - shortened so it reliably fits
+		// alongside the embedded emote button and the "Chat" send button without clipping.
+		messageField = new PlaceholderTextField("Message");
 		messageField.setBackground(fieldBackground);
 		messageField.setForeground(Color.WHITE);
 		messageField.setCaretColor(Color.WHITE);
 		// Extra right padding reserves room for the emote button overlaid on top of the
 		// field below, so typed text never runs underneath it.
-		messageField.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 32));
+		messageField.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 22));
 		messageField.addActionListener(e -> handleSend());
 		new MentionAutocomplete(messageField, () -> recentUsernames);
 
