@@ -10,7 +10,7 @@ public interface TwitchSidePanelConfig extends Config
 	@ConfigItem(
 		keyName = "channel",
 		name = "Twitch channel",
-		description = "The Twitch channel to show chat for - a plain channel name, or you can paste the channel's full twitch.tv URL and it'll be cleaned up automatically. The side panel only ever connects to this one channel - there's no in-panel way to switch to another.",
+		description = "Enter the Twitch channel name or URL you want to connect to.",
 		position = 1
 	)
 	default String channel()
@@ -21,7 +21,7 @@ public interface TwitchSidePanelConfig extends Config
 	@ConfigItem(
 		keyName = "autoConnect",
 		name = "Auto-connect on login",
-		description = "Connects to the configured channel's chat automatically when the client starts.",
+		description = "Connect automatically when the client starts.",
 		position = 2
 	)
 	default boolean autoConnect()
@@ -32,7 +32,7 @@ public interface TwitchSidePanelConfig extends Config
 	@ConfigItem(
 		keyName = "colorUsernames",
 		name = "Color usernames",
-		description = "Shows each chatter's name in their Twitch-chosen color, like Twitch's own chat.",
+		description = "Show each chatter's name in their Twitch color.",
 		position = 3
 	)
 	default boolean colorUsernames()
@@ -43,7 +43,7 @@ public interface TwitchSidePanelConfig extends Config
 	@ConfigItem(
 		keyName = "showTimestamps",
 		name = "Show timestamps",
-		description = "Shows the time each message arrived.",
+		description = "Show the time each message arrived.",
 		position = 4
 	)
 	default boolean showTimestamps()
@@ -54,7 +54,7 @@ public interface TwitchSidePanelConfig extends Config
 	@ConfigItem(
 		keyName = "maxMessages",
 		name = "Message history",
-		description = "How many messages to keep visible before older ones scroll off.",
+		description = "How many messages to keep before older ones scroll off.",
 		position = 5
 	)
 	default int maxMessages()

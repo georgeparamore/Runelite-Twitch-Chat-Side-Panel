@@ -19,6 +19,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -344,7 +345,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 			EmoteSetLoader.Result emotes = emoteSetLoader.load(CLIENT_ID, accessToken, channel);
 			rememberEmoteNames(emotes);
 
-			Map<String, ImageIcon> icons = new HashMap<>();
+			Map<String, ImageIcon> icons = new ConcurrentHashMap<>();
 			resolveIcons(emotes.channelEmotes, icons);
 			resolveIcons(emotes.globalEmotes, icons);
 			cachedEmoteIcons = icons;
@@ -373,16 +374,24 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 		knownEmoteNameToId = names;
 	}
 
+	/**
+	 * Resolves an icon for every emote in {@code emotes}, in parallel - a channel's emote
+	 * set can easily run into the dozens, and {@link EmoteImageCache#get} blocks on a
+	 * network fetch for each one not already cached, so doing this sequentially was the
+	 * main source of the picker feeling slow to open the first time each session (later
+	 * opens are instant, served from {@link #cachedEmoteSet}/{@link #cachedEmoteIcons}).
+	 * {@code icons} must be a thread-safe map (a {@link ConcurrentHashMap}).
+	 */
 	private void resolveIcons(List<EmoteSetLoader.EmoteInfo> emotes, Map<String, ImageIcon> icons)
 	{
-		for (EmoteSetLoader.EmoteInfo emote : emotes)
+		emotes.parallelStream().forEach(emote ->
 		{
 			ImageIcon icon = emoteImageCache.get(emote.id);
 			if (icon != null)
 			{
 				icons.put(emote.id, icon);
 			}
-		}
+		});
 	}
 
 	private void clearLogin()

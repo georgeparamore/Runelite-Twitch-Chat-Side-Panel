@@ -23,6 +23,8 @@ import javax.swing.JScrollPane;
 import javax.swing.Scrollable;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
 import java.awt.Rectangle;
 import net.runelite.client.ui.PluginPanel;
 
@@ -91,6 +93,7 @@ public class TwitchSidePanel extends PluginPanel
 	// The currently-open emote picker popup, if any - lets a second click on the emote
 	// button close it again instead of always opening a new one on top of itself.
 	private JPopupMenu emotePickerPopup;
+	private long emotePickerClosedAtMillis;
 
 	// Most-recently-seen chatters (most recent first), for the "@" mention autocomplete -
 	// capped so a long-running session doesn't grow this unbounded.
@@ -302,12 +305,26 @@ public class TwitchSidePanel extends PluginPanel
 	 * Toggles the emote picker: if it's already open, a second click closes it again
 	 * instead of fetching/reopening a new one on top of itself. Otherwise asks the plugin
 	 * to fetch (or serve from cache - see {@link #showEmotePicker}) and show it.
+	 * <p>
+	 * A JPopupMenu auto-dismisses itself on any click outside its own bounds - including a
+	 * click back on the button that opened it - and that dismissal runs as part of mouse
+	 * *press* handling, before this button's own click action fires on mouse *release*. So
+	 * by the time this method's {@code isVisible()} check runs, Swing has already closed
+	 * the popup, and without the timestamp check below every "close" click would look
+	 * identical to "never opened" and just reopen it. {@link #emotePickerClosedAtMillis} is
+	 * stamped by a listener on the popup itself (see {@link #showEmotePicker}) the instant
+	 * that auto-dismissal happens, so a click within the same short window is treated as
+	 * the close it actually was.
 	 */
 	private void handleEmoteButton()
 	{
 		if (emotePickerPopup != null && emotePickerPopup.isVisible())
 		{
 			emotePickerPopup.setVisible(false);
+			return;
+		}
+		if (System.currentTimeMillis() - emotePickerClosedAtMillis < 250)
+		{
 			return;
 		}
 		handlers.onEmotePickerClicked();
@@ -492,7 +509,27 @@ public class TwitchSidePanel extends PluginPanel
 	public void showEmotePicker(EmoteSetLoader.Result emotes, Map<String, ImageIcon> icons)
 	{
 		SwingUtilities.invokeLater(() ->
-			emotePickerPopup = EmotePickerPopup.show(emoteButton, emotes, icons, this::insertEmoteText));
+		{
+			emotePickerPopup = EmotePickerPopup.show(emoteButton, emotes, icons, this::insertEmoteText);
+			emotePickerPopup.addPopupMenuListener(new PopupMenuListener()
+			{
+				@Override
+				public void popupMenuWillBecomeInvisible(PopupMenuEvent e)
+				{
+					emotePickerClosedAtMillis = System.currentTimeMillis();
+				}
+
+				@Override
+				public void popupMenuWillBecomeVisible(PopupMenuEvent e)
+				{
+				}
+
+				@Override
+				public void popupMenuCanceled(PopupMenuEvent e)
+				{
+				}
+			});
+		});
 	}
 
 	private void insertEmoteText(String emoteName)

@@ -226,13 +226,26 @@ fixed eleven real bugs before they reached most users:
     needs to log out and back in once for the picker (and matching local-echo icons) to
     work again.
 11. Clicking the emote button always opened a fresh picker on top of whatever was already
-    there instead of toggling it closed on a second click, and the first open each session
-    took noticeably longer than later ones ("works right after I send a message"). Both
-    came from the same design: every click re-ran three sequential Helix calls (own user
-    id, broadcaster id, entitled emotes) with no memory of the last result, and no
-    reference to the currently-open popup to close instead of replace. Fixed by caching
-    the last successful fetch for the session (entitlement essentially never changes
-    mid-session) and having the button track its own popup to toggle.
+    there instead of toggling it closed on a second click, and opening it felt slow. Two
+    separate causes:
+    - Every click re-ran three sequential Helix calls (own user id, broadcaster id,
+      entitled emotes) with no memory of the last result. Fixed by caching the last
+      successful fetch for the session (entitlement essentially never changes
+      mid-session), so only the first open (or one that beats the login-time warm-up
+      fetch) pays that cost.
+    - The toggle "fix" that added a currently-open-popup check didn't actually work:
+      `JPopupMenu` auto-dismisses on any outside click - including a click back on the
+      button that opened it - and that dismissal happens on mouse *press*, before the
+      button's own click action fires on mouse *release*. So by the time the check ran,
+      Swing had already closed the popup, and every "close" click looked identical to
+      "never opened" and just reopened it. Fixed with a listener on the popup that
+      stamps the moment it auto-dismisses, so a click within a short window afterward is
+      treated as the close it actually was rather than a new open.
+    - Separately, the picker resolved an icon for every emote in the channel's set
+      sequentially - one blocking network fetch at a time - before showing anything,
+      which could mean dozens of sequential round trips for a channel with a large emote
+      set. Parallelized via `parallelStream()` so this only bottlenecks on the slowest
+      single fetch instead of the sum of all of them.
 
 The sub/gift carousel's `USERNOTICE` parsing (`parseUserNotice`) is covered by 7 unit
 tests (`TwitchChatClientTest`) built from Twitch's documented tag format, since there's
