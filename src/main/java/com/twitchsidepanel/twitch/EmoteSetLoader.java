@@ -13,12 +13,20 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Fetches the emotes available to use in a channel's chat - Twitch's global emote set plus
- * that channel's own subscriber/follower emotes - for the emote picker button next to the
- * send box. Needs an authenticated Helix API call (Client ID + user OAuth token), same as
- * badge icons, so the picker only works once logged in. This only resolves emote ids/names;
- * the actual images are fetched separately via {@link EmoteImageCache}, reusing the same
- * cache already used to render emotes inline in chat messages.
+ * Fetches the emotes you're actually entitled to use in a channel's chat, for the emote
+ * picker button next to the send box - Twitch's global set plus any of that channel's
+ * subscriber/follower emotes you actually have access to. Uses Helix's "Get User Emotes"
+ * endpoint (needs the {@code user:read:emotes} scope) rather than "Get Channel Emotes",
+ * since the latter returns a channel's *entire* emote set regardless of the requester's own
+ * subscription status - which meant the picker was offering tier-locked emotes a
+ * non-subscriber couldn't actually use, silently sending as plain text when picked (Twitch
+ * itself, not just this plugin, only renders an emote you're entitled to). "Get User
+ * Emotes" factors real entitlement (subscription tier included) in server-side, so what the
+ * picker shows now matches what will actually render.
+ * <p>
+ * This only resolves emote ids/names; the actual images are fetched separately via
+ * {@link EmoteImageCache}, reusing the same cache already used to render emotes inline in
+ * chat messages.
  */
 public class EmoteSetLoader
 {
@@ -53,7 +61,9 @@ public class EmoteSetLoader
 	/**
 	 * Blocks on several network calls - call from a background thread, never the Swing EDT.
 	 * Returns empty lists (never null) on any failure, the same tradeoff as badge icons: a
-	 * bad token or network hiccup just means an empty picker, not a broken chat feed.
+	 * bad/under-scoped token or network hiccup just means an empty picker, not a broken
+	 * chat feed. A token issued before {@code user:read:emotes} was added to the login
+	 * scope will fail here until the user logs out and back in.
 	 */
 	public Result load(String clientId, String accessToken, String channel)
 	{
@@ -61,13 +71,12 @@ public class EmoteSetLoader
 		List<EmoteInfo> globalEmotes = new ArrayList<>();
 		try
 		{
+			String myUserId = fetchOwnUserId(clientId, accessToken);
 			String broadcasterId = fetchBroadcasterId(clientId, accessToken, channel);
-			if (broadcasterId != null)
+			if (myUserId != null)
 			{
-				channelEmotes.addAll(fetchEmotes(clientId, accessToken,
-					"https://api.twitch.tv/helix/chat/emotes?broadcaster_id=" + broadcasterId));
+				fetchEntitledEmotes(clientId, accessToken, myUserId, broadcasterId, channelEmotes, globalEmotes);
 			}
-			globalEmotes.addAll(fetchEmotes(clientId, accessToken, "https://api.twitch.tv/helix/chat/emotes/global"));
 		}
 		catch (IOException | InterruptedException | RuntimeException e)
 		{
@@ -76,11 +85,20 @@ public class EmoteSetLoader
 		return new Result(channelEmotes, globalEmotes);
 	}
 
+	private String fetchOwnUserId(String clientId, String accessToken) throws IOException, InterruptedException
+	{
+		// No login/id params - Helix returns the token owner's own record.
+		return firstUserId(get(clientId, accessToken, "https://api.twitch.tv/helix/users"));
+	}
+
 	private String fetchBroadcasterId(String clientId, String accessToken, String channel)
 		throws IOException, InterruptedException
 	{
-		HttpResponse<String> response = get(clientId, accessToken,
-			"https://api.twitch.tv/helix/users?login=" + channel);
+		return firstUserId(get(clientId, accessToken, "https://api.twitch.tv/helix/users?login=" + channel));
+	}
+
+	private String firstUserId(HttpResponse<String> response)
+	{
 		if (response.statusCode() != 200)
 		{
 			return null;
@@ -94,27 +112,38 @@ public class EmoteSetLoader
 		return data.get(0).getAsJsonObject().get("id").getAsString();
 	}
 
-	private List<EmoteInfo> fetchEmotes(String clientId, String accessToken, String url)
-		throws IOException, InterruptedException
+	private void fetchEntitledEmotes(String clientId, String accessToken, String myUserId, String broadcasterId,
+		List<EmoteInfo> channelEmotes, List<EmoteInfo> globalEmotes) throws IOException, InterruptedException
 	{
-		List<EmoteInfo> result = new ArrayList<>();
+		String url = "https://api.twitch.tv/helix/chat/emotes/user?user_id=" + myUserId
+			+ (broadcasterId != null ? "&broadcaster_id=" + broadcasterId : "");
 		HttpResponse<String> response = get(clientId, accessToken, url);
 		if (response.statusCode() != 200)
 		{
-			return result;
+			return;
 		}
+
 		JsonObject json = new JsonParser().parse(response.body()).getAsJsonObject();
 		JsonArray data = json.getAsJsonArray("data");
 		if (data == null)
 		{
-			return result;
+			return;
 		}
+
 		for (int i = 0; i < data.size(); i++)
 		{
 			JsonObject emote = data.get(i).getAsJsonObject();
-			result.add(new EmoteInfo(emote.get("id").getAsString(), emote.get("name").getAsString()));
+			EmoteInfo info = new EmoteInfo(emote.get("id").getAsString(), emote.get("name").getAsString());
+			String ownerId = emote.has("owner_id") ? emote.get("owner_id").getAsString() : "";
+			if (broadcasterId != null && broadcasterId.equals(ownerId))
+			{
+				channelEmotes.add(info);
+			}
+			else
+			{
+				globalEmotes.add(info);
+			}
 		}
-		return result;
 	}
 
 	private HttpResponse<String> get(String clientId, String accessToken, String url)

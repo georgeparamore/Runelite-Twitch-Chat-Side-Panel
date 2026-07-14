@@ -73,13 +73,18 @@ Clicking any sender's name in the feed starts a reply to them by setting the mes
 to "@Username " - the same click-to-@mention gesture Twitch's chat offers. See
 `ChatMessageRowPanel`.
 
-**Emote picker**: the emote button next to **Chat** fetches the current channel's own
-emotes (subscriber/follower) plus Twitch's global set via Helix
-(`GET /helix/chat/emotes?broadcaster_id=...` and `/helix/chat/emotes/global`) and shows
+**Emote picker**: the emote button next to **Chat** fetches only the emotes you're
+actually entitled to use in the current channel - Twitch's global set plus that channel's
+subscriber/follower emotes, filtered by your real subscription tier - via Helix's "Get
+User Emotes" (`GET /helix/chat/emotes/user?user_id=...&broadcaster_id=...`), and shows
 them as a scrollable icon grid, split into "Channel emotes" / "Global emotes" sections -
-click one to insert its text code into the message field. Needs a login the same as
-sending messages does; the icons themselves reuse `EmoteImageCache`, the same cache that
-renders emotes inline in chat messages. See `EmoteSetLoader` / `EmotePickerPopup`.
+click one to insert its text code into the message field. This is deliberately not "Get
+Channel Emotes", which returns a channel's entire emote set with no regard for whether you
+can actually use any given one - picking a tier-locked emote from that would just post its
+plain text code, since Twitch itself won't render an emote you're not entitled to. Needs a
+login the same as sending messages does, plus the `user:read:emotes` scope; the icons
+themselves reuse `EmoteImageCache`, the same cache that renders emotes inline in chat
+messages. See `EmoteSetLoader` / `EmotePickerPopup`.
 
 **Badge icons**: badge *names* (subscriber, moderator, vip, ...) arrive over IRC for every
 message regardless of login state, but turning those into actual icon images needs an
@@ -129,7 +134,7 @@ account:
   real message (confirmed with a broadcaster badge).
 
 This live testing (including on a real Mac, not just headless sandbox testing) caught and
-fixed eight real bugs before they reached most users:
+fixed ten real bugs before they reached most users:
 
 1. The original raw-IRC-socket transport (`irc.chat.twitch.tv:6697`) had no connect
    timeout, so an unreachable network left the panel stuck on "Connecting..." forever.
@@ -184,6 +189,24 @@ fixed eight real bugs before they reached most users:
    `getBackground()`, never the accent color passed into the constructor), silently
    painting over the rounded purple fill with a flat rectangular default-gray one. Fixed
    by painting the button's text directly instead of delegating to the look-and-feel.
+9. A message you sent yourself always showed its emotes as plain text codes instead of
+   icons, even ones the emote picker had just been used to insert - only messages from
+   other people rendered emote icons. Root cause: Twitch's `emotes` IRC tag (the thing
+   that tells the chat feed which parts of a message are emotes, and where) only arrives
+   on incoming messages; a message you send is never echoed back over IRC at all (see the
+   `echo-message` NAK above), so the local echo had no positions to work with and fell
+   back to plain text for the whole message. Fixed by having the plugin remember its own
+   name -> id map of emotes you're entitled to use (the same data the picker already
+   fetches) and matching your sent text against it locally before rendering the echo.
+10. The emote picker originally listed a channel's *entire* emote set (via Helix's "Get
+    Channel Emotes"), including subscriber-tier emotes regardless of whether you were
+    actually subscribed at that tier - so picking and sending one just posted its plain
+    text code, since Twitch itself won't render an emote you're not entitled to use,
+    plugin or not. Fixed by switching to "Get User Emotes", which factors in your real
+    subscription status server-side and only returns emotes you can actually use. This
+    needed a new OAuth scope (`user:read:emotes`), so anyone logged in before this change
+    needs to log out and back in once for the picker (and matching local-echo icons) to
+    work again.
 
 The sub/gift carousel's `USERNOTICE` parsing (`parseUserNotice`) is covered by 7 unit
 tests (`TwitchChatClientTest`) built from Twitch's documented tag format, since there's

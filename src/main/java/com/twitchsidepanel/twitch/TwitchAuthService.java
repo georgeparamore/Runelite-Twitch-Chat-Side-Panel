@@ -20,15 +20,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * both need either a client secret (server-side apps only) or a localhost redirect
  * listener; device flow needs neither, which suits a desktop client with no backend.
  * <p>
- * Requests {@code chat:read chat:edit} scope, enough to read and send chat as the logged
- * in user - nothing else.
+ * Requests {@code chat:read chat:edit} scope (read/send chat as the logged in user) plus
+ * {@code user:read:emotes} (the emote picker's "Get User Emotes" lookup, which is what
+ * lets it show only emotes you're actually entitled to use - the right subscriber tier
+ * included - rather than every emote the channel happens to have).
  */
 public class TwitchAuthService
 {
 	private static final String DEVICE_CODE_URL = "https://id.twitch.tv/oauth2/device";
 	private static final String TOKEN_URL = "https://id.twitch.tv/oauth2/token";
 	private static final String VALIDATE_URL = "https://id.twitch.tv/oauth2/validate";
-	private static final String SCOPES = "chat:read chat:edit";
+	private static final String SCOPES = "chat:read chat:edit user:read:emotes";
 
 	private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 	private final Gson gson = new Gson();
