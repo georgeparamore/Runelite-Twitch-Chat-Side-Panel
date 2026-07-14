@@ -18,7 +18,6 @@ import javax.swing.ImageIcon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
-import javax.swing.OverlayLayout;
 import javax.swing.Scrollable;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
@@ -224,27 +223,18 @@ public class TwitchSidePanel extends PluginPanel
 
 		// Twitch's own chat box embeds its emote button inside the input field itself,
 		// at its right edge, rather than as a separate control taking up its own row
-		// width - OverlayLayout stacks the two on top of each other by alignment (the
-		// field fills the whole area, the button aligns to the right edge) instead of a
-		// normal side-by-side layout, and painting the button's own background to match
-		// the field's makes the seam invisible.
-		JPanel fieldStack = new JPanel();
-		fieldStack.setLayout(new OverlayLayout(fieldStack));
-		fieldStack.setOpaque(false);
-		messageField.setAlignmentX(0f);
-		messageField.setAlignmentY(0.5f);
-		emoteButton.setAlignmentX(1f);
-		emoteButton.setAlignmentY(0.5f);
-		// Container paints its children from the last-added backward, so the first
-		// component added ends up on top - emoteButton needs to go first so it's visible
-		// in front of messageField rather than hidden behind it.
-		fieldStack.add(emoteButton);
-		fieldStack.add(messageField);
+		// width. OverlayLayout was tried first for this but didn't position the button
+		// correctly in practice; adding the button as a direct child of the text field
+		// is a well-worn, reliable Swing trick instead - JTextField is itself a
+		// Container, so a normal BorderLayout.EAST child renders on top of the field's
+		// own text painting without disturbing it.
+		messageField.setLayout(new BorderLayout());
+		messageField.add(emoteButton, BorderLayout.EAST);
 
 		sendButton = new PillButton("Chat", ACCENT, ACCENT_HOVER);
 		sendButton.addActionListener(e -> handleSend());
 
-		sendRow.add(fieldStack, BorderLayout.CENTER);
+		sendRow.add(messageField, BorderLayout.CENTER);
 		sendRow.add(sendButton, BorderLayout.EAST);
 
 		add(topContainer, BorderLayout.NORTH);
