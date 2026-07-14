@@ -2,6 +2,7 @@ package com.twitchsidepanel.twitch;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import java.awt.Desktop;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -89,14 +90,39 @@ public class TwitchAuthService
 			int intervalSeconds = device.has("interval") ? device.get("interval").getAsInt() : 5;
 
 			listener.onCodeReady(userCode, verificationUri);
+			openInBrowser(verificationUri);
 			pollForToken(clientId, deviceCode, expiresInSeconds, intervalSeconds, listener);
 		}
-		catch (IOException | InterruptedException e)
+		catch (Exception e)
 		{
+			// Deliberately broad: this runs on its own background thread with no
+			// uncaught-exception handler, so anything narrower risks the thread dying
+			// silently on a response shaped differently than expected - "nothing
+			// happens" when you click the button, with no error and nothing to debug.
 			if (!cancelled.get())
 			{
-				listener.onError("Login error: " + e.getMessage());
+				listener.onError("Login error: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
 			}
+		}
+	}
+
+	/**
+	 * Best-effort convenience so the user doesn't have to copy the URL themselves - if
+	 * this fails (unsupported platform/desktop environment) they can still use the code
+	 * and link shown in the panel.
+	 */
+	private void openInBrowser(String uri)
+	{
+		try
+		{
+			if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE))
+			{
+				Desktop.getDesktop().browse(URI.create(uri));
+			}
+		}
+		catch (Exception ignored)
+		{
+			// Not fatal - the panel still shows the code and link to open manually.
 		}
 	}
 
@@ -175,8 +201,11 @@ public class TwitchAuthService
 			JsonObject json = gson.fromJson(response.body(), JsonObject.class);
 			return json.has("login") ? json.get("login").getAsString() : null;
 		}
-		catch (IOException | InterruptedException e)
+		catch (Exception e)
 		{
+			// Broad on purpose - callers run this on background threads with no outer
+			// safety net, so an unexpected response shape should fall back to "not
+			// logged in" rather than kill the thread silently.
 			return null;
 		}
 	}

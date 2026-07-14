@@ -1,43 +1,31 @@
 # Twitch Chat Side Panel (RuneLite plugin)
 
-Shows your Twitch channel's live chat in a RuneLite side panel - Party-Hub style - instead
-of the official [Twitch plugin](https://github.com/runelite/runelite/wiki/Twitch)'s
-chatbox-PM format.
+Shows Twitch chat in a RuneLite side panel - Party-Hub style - instead of the official
+[Twitch plugin](https://github.com/runelite/runelite/wiki/Twitch)'s chatbox-PM format.
 
-It only ever connects to **your own** channel, as set in the plugin's config - there's no
-free-text field or other way to point it at an arbitrary Twitch channel from the panel.
+It only ever connects to the single channel configured in the plugin's settings - there's
+no free-text field or other way to switch to a different channel from the panel itself.
 
 Reading chat works anonymously with no login at all. Logging in with your Twitch account
-additionally lets you send messages from the panel, same as Twitch's own chat box.
+additionally lets you send messages from the panel, same as Twitch's own chat box - no
+setup needed, just click **Log in with Twitch**.
 
 ## Using it
 
-1. Open the plugin's settings (gear icon in the plugin list) and set **Your Twitch
-   channel** to your own Twitch username.
+1. Open the plugin's settings (gear icon in the plugin list) and set **Twitch channel**
+   to whichever channel you want chat for.
 2. Open the plugin's side panel (toolbar icon) and click **Connect** to start reading
    chat - no login needed for this part.
-3. To also send messages, register a Twitch application (one-time setup, see below), put
-   its Client ID in the plugin settings, then click **Log in with Twitch** in the panel
-   and follow the on-screen code/link. Once logged in, a message box appears at the
-   bottom of the panel.
+3. To also send messages, click **Log in with Twitch** in the panel and follow the
+   code/link it shows you (it also tries to open your browser to it automatically). Once
+   logged in, a message box appears at the bottom of the panel.
 
 If no channel is configured, the panel shows "No channel set" and the Connect button is
 disabled until you set one.
 
-### Registering a Twitch app (only needed to send messages)
-
-1. Go to https://dev.twitch.tv/console/apps -> **Register Your Application**.
-2. Name: anything (e.g. "My RuneLite Chat").
-3. OAuth Redirect URL: any valid URL, e.g. `https://twitchapps.com/tokengen/` - it isn't
-   actually used by the login flow this plugin uses, but Twitch requires one to be set.
-4. Client Type: **Public**.
-5. Save, copy the **Client ID**, paste it into the plugin's **Twitch app Client ID**
-   setting.
-
 Config options (gear icon in the plugin list):
 
-- **Twitch app Client ID** - only needed to log in and send messages.
-- **Your Twitch channel** - the only channel this plugin will ever connect to.
+- **Twitch channel** - the only channel this plugin will ever connect to.
 - **Auto-connect on login** - connects automatically when the client starts.
 - **Color usernames** - use each chatter's Twitch name color.
 - **Show timestamps** - show `HH:mm` per message.
@@ -60,13 +48,20 @@ unauthenticated emote CDN by id (from the `emotes` IRC tag) and downscaled to a 
 `ChatMessageRowPanel`.
 
 **Login / sending**: uses OAuth 2.0's Device Code Grant (`TwitchAuthService`) - you're
-shown a short code and told to enter it at a URL in any browser, and the plugin polls
-Twitch until it's approved. This was chosen over the Authorization Code / Implicit flows
-because both of those need either a client secret (server apps only) or a localhost
-redirect listener; device flow needs neither, which suits a plugin with no backend. Once
-authorized, the same WebSocket connection is upgraded to log in as the real account
-(`PASS oauth:<token>` / real nick instead of `justinfanNNNNN`), which is what allows
-`sendMessage()` to actually post to chat.
+shown a short code and told to enter it at a URL in any browser (which the plugin also
+tries to open automatically), and it polls Twitch until it's approved. This was chosen
+over the Authorization Code / Implicit flows because both of those need either a client
+secret (server apps only) or a localhost redirect listener; device flow needs neither,
+which suits a plugin with no backend. Once authorized, the same WebSocket connection is
+upgraded to log in as the real account (`PASS oauth:<token>` / real nick instead of
+`justinfanNNNNN`), which is what allows `sendMessage()` to actually post to chat.
+
+One shared Twitch application (Client ID) is baked into the plugin (`TwitchSidePanelPlugin.CLIENT_ID`)
+so every user just logs in with their own account with zero setup - a Client ID isn't a
+secret (that's the point of the "Public" client type Twitch app registration uses; no
+client secret is involved anywhere in this flow), it just identifies "which app is
+asking." Each user's login produces their own personal token; nothing is shared between
+users except this one identifier.
 
 **Badge icons**: badge *names* (subscriber, moderator, vip, ...) arrive over IRC for every
 message regardless of login state, but turning those into actual icon images needs an
@@ -99,11 +94,11 @@ Logs in with your own RuneLite account; enable "Twitch Chat Side Panel" in the p
 
 ## Status
 
-Verified fully live end-to-end against a real RuneLite client (headless, via Xvfb), a
-real registered Twitch application, and the developer's real Twitch account:
+Verified live end-to-end against a real RuneLite client (both headless/Xvfb testing and
+the maintainer's real Mac), a real registered Twitch application, and a real Twitch
+account:
 
-- Chat feed renders correctly against a live, high-traffic channel - display
-  names/colors/timestamps, auto-scroll.
+- Chat feed renders correctly against a live channel - display names/colors/timestamps.
 - Emotes render as real inline images (initially discovered they were rendering at their
   native 56x56 size and blowing up row heights - fixed by downscaling to 20px).
 - OAuth device-code login completed for real: code issued, approved in a real browser,
@@ -115,7 +110,8 @@ real registered Twitch application, and the developer's real Twitch account:
 - Badge icons render for real - fetched from Twitch's Helix API and displayed next to a
   real message (confirmed with a broadcaster badge).
 
-This live testing caught and fixed three real bugs before they reached anyone:
+This live testing (including on a real Mac, not just headless sandbox testing) caught and
+fixed six real bugs before they reached most users:
 
 1. The original raw-IRC-socket transport (`irc.chat.twitch.tv:6697`) had no connect
    timeout, so an unreachable network left the panel stuck on "Connecting..." forever.
@@ -131,6 +127,31 @@ This live testing caught and fixed three real bugs before they reached anyone:
    capability (confirmed live, an initial fix attempt requesting it was silently
    rejected by Twitch), so there is no server echo to rely on. Fixed with a local echo -
    see "Your own sent messages" above.
+4. On a quiet channel with only a couple of messages, rows rendered with huge vertical
+   gaps between them instead of stacking normally - a plain `JPanel` inside a
+   `BoxLayout` column defaults to an unbounded maximum height (its layout, `BorderLayout`,
+   isn't a `LayoutManager2` and never supplies one), so `BoxLayout` was dumping all the
+   scroll pane's empty leftover space into the message rows themselves. Only showed up on
+   a channel quiet enough to have empty space to distribute - a busy test channel always
+   had enough messages to fill the panel, hiding the bug entirely during earlier testing.
+   Fixed by bounding each row's maximum height to its live preferred height
+   (`ChatMessageRowPanel.getMaximumSize()`) plus a trailing glue component in the message
+   list so leftover space collects at the bottom instead.
+5. Login used to require pasting a personally-registered Client ID into config first,
+   and clicking "Log in with Twitch" with that field empty produced a real but easy-to-miss
+   error label - functionally "nothing happens" from a user's perspective. Fixed by baking
+   in one shared Client ID (see "Login / sending" above) so there's no setup step at all,
+   and by widening exception handling in the login flow so any unexpected failure (not
+   just network errors) surfaces a visible message instead of the background thread dying
+   silently.
+6. Long chat messages were clipped at the panel's right edge instead of wrapping to a
+   second line. The message feed's `JScrollPane` disables the horizontal scrollbar, and
+   the panel holding the rows was a plain `JPanel`, which doesn't implement `Scrollable` -
+   so the viewport never forced its width to match the visible area, leaving each row's
+   `JTextPane` free to grow as wide as its longest line and get clipped rather than wrap.
+   Fixed by having that panel implement `Scrollable` with
+   `getScrollableTracksViewportWidth()` returning `true`, pinning its width to the
+   viewport and giving each row a real bounded width to wrap against.
 
 The sub/gift carousel's `USERNOTICE` parsing (`parseUserNotice`) is covered by 7 unit
 tests (`TwitchChatClientTest`) built from Twitch's documented tag format, since there's

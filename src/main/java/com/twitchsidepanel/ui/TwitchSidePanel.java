@@ -14,16 +14,18 @@ import javax.swing.ImageIcon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.Scrollable;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import java.awt.Rectangle;
 import net.runelite.client.ui.PluginPanel;
 
 /**
  * Side panel that shows Twitch chat as a scrolling message feed, styled to match Twitch's
  * own chat window as closely as a Swing side panel reasonably can, instead of the official
- * Twitch plugin's chatbox-PM format. Only ever connects to the channel configured in the
- * plugin's settings (your own channel) - there is no way to type in and join an arbitrary
- * channel from the panel itself.
+ * Twitch plugin's chatbox-PM format. Only ever connects to the single channel configured
+ * in the plugin's settings - there is no free-text field or other way to switch to a
+ * different channel from the panel itself.
  * <p>
  * Reading chat works with no login. Logging in with Twitch (device code flow) additionally
  * unlocks sending messages.
@@ -162,10 +164,21 @@ public class TwitchSidePanel extends PluginPanel
 		topContainer.add(tabBar);
 		topContainer.add(subGiftCarousel);
 
-		messageListPanel = new JPanel();
+		// A plain JPanel doesn't implement Scrollable, so a JScrollPane's viewport never
+		// forces its width to match the viewport - it's left free to grow as wide as its
+		// widest child wants. Since HORIZONTAL_SCROLLBAR_NEVER means there's no horizontal
+		// scrollbar to reveal that overflow, long chat lines were simply clipped at the
+		// panel's edge instead of wrapping. Overriding getScrollableTracksViewportWidth()
+		// to always return true pins this panel's width to the viewport, which in turn
+		// gives each row's JTextPane a real bounded width to wrap its text against.
+		messageListPanel = new ScrollableMessagePanel();
 		messageListPanel.setLayout(new BoxLayout(messageListPanel, BoxLayout.Y_AXIS));
 		messageListPanel.setBackground(BACKGROUND);
 		messageListPanel.setBorder(BorderFactory.createEmptyBorder(6, 0, 6, 0));
+		// Pinned as the last component always (see appendMessage/clearMessages) so any
+		// leftover vertical space in a quiet channel collects here at the bottom instead
+		// of BoxLayout distributing it into the message rows themselves.
+		messageListPanel.add(Box.createVerticalGlue());
 
 		scrollPane = new JScrollPane(messageListPanel);
 		scrollPane.setBorder(BorderFactory.createEmptyBorder());
@@ -343,9 +356,11 @@ public class TwitchSidePanel extends PluginPanel
 			ChatMessageRowPanel row = new ChatMessageRowPanel(message, colorUsernames, showTimestamps,
 				emoteIcons, badgeIcons);
 
-			messageListPanel.add(row);
+			// The trailing glue component must stay last, so insert new rows just
+			// before it rather than appending after.
+			messageListPanel.add(row, messageListPanel.getComponentCount() - 1);
 
-			while (messageListPanel.getComponentCount() > maxMessages)
+			while (messageListPanel.getComponentCount() - 1 > maxMessages)
 			{
 				messageListPanel.remove(0);
 			}
@@ -365,6 +380,7 @@ public class TwitchSidePanel extends PluginPanel
 		SwingUtilities.invokeLater(() ->
 		{
 			messageListPanel.removeAll();
+			messageListPanel.add(Box.createVerticalGlue());
 			messageListPanel.revalidate();
 			messageListPanel.repaint();
 		});
@@ -373,5 +389,46 @@ public class TwitchSidePanel extends PluginPanel
 	public void addSubEvent(TwitchSubEvent event)
 	{
 		subGiftCarousel.addEvent(event);
+	}
+
+	/**
+	 * A plain JPanel doesn't implement {@link Scrollable}, so a JScrollPane's viewport
+	 * never forces its width to match the viewport - it's left free to grow as wide as its
+	 * widest child wants. Since the message feed disables the horizontal scrollbar, that
+	 * overflow was simply clipped at the panel's edge instead of wrapping, cutting off long
+	 * chat lines. Tracking the viewport's width here gives each row's JTextPane a real
+	 * bounded width to wrap its text against.
+	 */
+	private static class ScrollableMessagePanel extends JPanel implements Scrollable
+	{
+		@Override
+		public boolean getScrollableTracksViewportWidth()
+		{
+			return true;
+		}
+
+		@Override
+		public boolean getScrollableTracksViewportHeight()
+		{
+			return false;
+		}
+
+		@Override
+		public Dimension getPreferredScrollableViewportSize()
+		{
+			return getPreferredSize();
+		}
+
+		@Override
+		public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction)
+		{
+			return 16;
+		}
+
+		@Override
+		public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction)
+		{
+			return visibleRect.height;
+		}
 	}
 }

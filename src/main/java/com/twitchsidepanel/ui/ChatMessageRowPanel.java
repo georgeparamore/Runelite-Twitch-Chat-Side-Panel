@@ -35,15 +35,27 @@ public class ChatMessageRowPanel extends JPanel
 		setOpaque(false);
 		setLayout(new BorderLayout());
 		setBorder(BorderFactory.createEmptyBorder(2, 10, 2, 10));
-
-		// Never let this row cap out at a stale (0,0) BoxLayout-computed max size - that
-		// happens if setMaximumSize() is called before a parent BoxLayout has real
-		// children, and the row silently renders as a sliver forever after.
-		setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 		setAlignmentX(LEFT_ALIGNMENT);
 
 		JTextPane pane = buildLine(message, colorUsernames, showTimestamp, emoteIcons, badgeIcons);
 		add(pane, BorderLayout.CENTER);
+	}
+
+	/**
+	 * A plain JPanel inside a BoxLayout column defaults to an unbounded maximum height
+	 * (BorderLayout - this row's own layout - isn't a LayoutManager2, so it never
+	 * supplies one), so with only a few short messages in a tall scroll panel, BoxLayout
+	 * was distributing all the empty leftover vertical space into the rows themselves,
+	 * stretching them apart with huge gaps instead of leaving the space blank at the
+	 * bottom. Tying the maximum height to the current preferred height - recomputed live
+	 * on every call rather than a one-time snapshot, so it reflects the real wrapped-text
+	 * height once this row has an actual assigned width - stops BoxLayout from ever
+	 * growing this row past its natural content size.
+	 */
+	@Override
+	public Dimension getMaximumSize()
+	{
+		return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
 	}
 
 	private JTextPane buildLine(TwitchMessage message, boolean colorUsernames, boolean showTimestamp,

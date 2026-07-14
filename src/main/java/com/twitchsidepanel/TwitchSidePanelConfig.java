@@ -8,20 +8,9 @@ import net.runelite.client.config.ConfigItem;
 public interface TwitchSidePanelConfig extends Config
 {
 	@ConfigItem(
-		keyName = "clientId",
-		name = "Twitch app Client ID",
-		description = "Client ID of a Twitch application you registered at dev.twitch.tv/console/apps (Client Type: Public). Needed to log in and send messages.",
-		position = 0
-	)
-	default String clientId()
-	{
-		return "";
-	}
-
-	@ConfigItem(
 		keyName = "channel",
-		name = "Your Twitch channel",
-		description = "Your own Twitch channel name. The side panel only ever connects to this channel.",
+		name = "Twitch channel",
+		description = "The Twitch channel to show chat for. The side panel only ever connects to this one channel - there's no in-panel way to switch to another.",
 		position = 1
 	)
 	default String channel()

@@ -27,12 +27,12 @@ import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 
 /**
- * Shows your Twitch channel's live chat in a RuneLite side panel, Party-Hub style,
- * instead of the official Twitch plugin's chatbox-PM format.
+ * Shows Twitch chat in a RuneLite side panel, Party-Hub style, instead of the official
+ * Twitch plugin's chatbox-PM format.
  * <p>
- * Only ever connects to the channel set in this plugin's config (your own channel) - it
- * cannot be pointed at an arbitrary Twitch channel from the panel itself. Reading chat
- * works anonymously with no login; logging in with Twitch (device code flow) additionally
+ * Only ever connects to the single channel set in this plugin's config - there's no
+ * in-panel way to switch to a different channel at runtime. Reading chat works
+ * anonymously with no login; logging in with Twitch (device code flow) additionally
  * unlocks sending messages as yourself.
  */
 @PluginDescriptor(
@@ -44,6 +44,12 @@ import net.runelite.client.ui.NavigationButton;
 public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 {
 	private static final String CONFIG_GROUP = "twitchsidepanel";
+
+	// One shared Client ID for everyone using this plugin - it just identifies "which app
+	// is asking" to Twitch and isn't secret (that's the whole point of the "Public"
+	// client type), unlike a client secret. Each user still logs in with their own
+	// account and gets their own token; nothing is shared between users except this ID.
+	private static final String CLIENT_ID = "azsobegarjzbpgosk97ydc9g64j6ou";
 
 	@Inject
 	private ClientToolbar clientToolbar;
@@ -175,14 +181,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 
 	private void startLogin()
 	{
-		String clientId = config.clientId().trim();
-		if (clientId.isEmpty())
-		{
-			panel.showLoginError("Set your Twitch app Client ID in the plugin settings first");
-			return;
-		}
-
-		authService.startLogin(clientId, new TwitchAuthService.LoginListener()
+		authService.startLogin(CLIENT_ID, new TwitchAuthService.LoginListener()
 		{
 			@Override
 			public void onCodeReady(String userCode, String verificationUri)
@@ -202,7 +201,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 				{
 					panel.showLoggedIn(username);
 				}
-				loadBadgeIcons(clientId, accessToken);
+				loadBadgeIcons(accessToken);
 			}
 
 			@Override
@@ -238,7 +237,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 			{
 				configManager.setConfiguration(CONFIG_GROUP, "loggedInUsername", username);
 				panel.showLoggedIn(username);
-				loadBadgeIcons(config.clientId().trim(), accessToken);
+				loadBadgeIcons(accessToken);
 			}
 			else
 			{
@@ -250,14 +249,14 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 		thread.start();
 	}
 
-	private void loadBadgeIcons(String clientId, String accessToken)
+	private void loadBadgeIcons(String accessToken)
 	{
 		String channel = config.channel().trim();
-		if (clientId.isEmpty() || channel.isEmpty())
+		if (channel.isEmpty())
 		{
 			return;
 		}
-		Thread thread = new Thread(() -> badgeIconCache.loadForChannel(clientId, accessToken, channel),
+		Thread thread = new Thread(() -> badgeIconCache.loadForChannel(CLIENT_ID, accessToken, channel),
 			"twitch-badge-icons");
 		thread.setDaemon(true);
 		thread.start();
