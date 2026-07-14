@@ -18,7 +18,9 @@ setup needed, just click **Log in with Twitch**.
    chat - no login needed for this part.
 3. To also send messages, click **Log in with Twitch** in the panel and follow the
    code/link it shows you (it also tries to open your browser to it automatically). Once
-   logged in, a message box appears at the bottom of the panel.
+   logged in, a message box appears at the bottom of the panel, with an emote button next
+   to **Chat** - click it to browse and insert that channel's emotes plus Twitch's global
+   set, the same as the emote button in Twitch's own chat box.
 
 If no channel is configured, the panel shows "No channel set" and the Connect button is
 disabled until you set one.
@@ -62,6 +64,14 @@ secret (that's the point of the "Public" client type Twitch app registration use
 client secret is involved anywhere in this flow), it just identifies "which app is
 asking." Each user's login produces their own personal token; nothing is shared between
 users except this one identifier.
+
+**Emote picker**: the emote button next to **Chat** fetches the current channel's own
+emotes (subscriber/follower) plus Twitch's global set via Helix
+(`GET /helix/chat/emotes?broadcaster_id=...` and `/helix/chat/emotes/global`) and shows
+them as a scrollable icon grid, split into "Channel emotes" / "Global emotes" sections -
+click one to insert its text code into the message field. Needs a login the same as
+sending messages does; the icons themselves reuse `EmoteImageCache`, the same cache that
+renders emotes inline in chat messages. See `EmoteSetLoader` / `EmotePickerPopup`.
 
 **Badge icons**: badge *names* (subscriber, moderator, vip, ...) arrive over IRC for every
 message regardless of login state, but turning those into actual icon images needs an
@@ -111,7 +121,7 @@ account:
   real message (confirmed with a broadcaster badge).
 
 This live testing (including on a real Mac, not just headless sandbox testing) caught and
-fixed six real bugs before they reached most users:
+fixed seven real bugs before they reached most users:
 
 1. The original raw-IRC-socket transport (`irc.chat.twitch.tv:6697`) had no connect
    timeout, so an unreachable network left the panel stuck on "Connecting..." forever.
@@ -152,6 +162,12 @@ fixed six real bugs before they reached most users:
    Fixed by having that panel implement `Scrollable` with
    `getScrollableTracksViewportWidth()` returning `true`, pinning its width to the
    viewport and giving each row a real bounded width to wrap against.
+7. The newest message was routinely clipped at the bottom edge, needing a manual scroll to
+   see it fully - `appendMessage()`'s "scroll to bottom" read the scrollbar's `getMaximum()`
+   right after `revalidate()`, but `revalidate()` only marks the layout invalid; the actual
+   re-layout that grows the scrollbar's max to fit the new row happens later on the event
+   queue, so the read was always one message behind. Fixed by calling `validate()` (which
+   re-lays-out synchronously) before reading the scrollbar's max.
 
 The sub/gift carousel's `USERNOTICE` parsing (`parseUserNotice`) is covered by 7 unit
 tests (`TwitchChatClientTest`) built from Twitch's documented tag format, since there's

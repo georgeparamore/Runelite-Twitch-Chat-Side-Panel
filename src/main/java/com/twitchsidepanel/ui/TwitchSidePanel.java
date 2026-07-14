@@ -1,5 +1,6 @@
 package com.twitchsidepanel.ui;
 
+import com.twitchsidepanel.twitch.EmoteSetLoader;
 import com.twitchsidepanel.twitch.TwitchMessage;
 import com.twitchsidepanel.twitch.TwitchSubEvent;
 import java.awt.BorderLayout;
@@ -45,6 +46,8 @@ public class TwitchSidePanel extends PluginPanel
 		void onLogoutClicked();
 
 		void onSendMessage(String text);
+
+		void onEmotePickerClicked();
 	}
 
 	private enum AuthState
@@ -70,6 +73,7 @@ public class TwitchSidePanel extends PluginPanel
 	private final JPanel messageListPanel;
 	private final JScrollPane scrollPane;
 	private final PlaceholderTextField messageField;
+	private final EmoteButton emoteButton;
 	private final PillButton sendButton;
 	private final JPanel sendRow;
 
@@ -200,11 +204,19 @@ public class TwitchSidePanel extends PluginPanel
 		messageField.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
 		messageField.addActionListener(e -> handleSend());
 
+		emoteButton = new EmoteButton(new Color(0x2a, 0x2a, 0x33), new Color(0x38, 0x38, 0x44));
+		emoteButton.addActionListener(e -> handlers.onEmotePickerClicked());
+
 		sendButton = new PillButton("Chat", ACCENT, ACCENT_HOVER);
 		sendButton.addActionListener(e -> handleSend());
 
+		JPanel sendButtons = new JPanel(new BorderLayout(6, 0));
+		sendButtons.setOpaque(false);
+		sendButtons.add(emoteButton, BorderLayout.WEST);
+		sendButtons.add(sendButton, BorderLayout.EAST);
+
 		sendRow.add(messageField, BorderLayout.CENTER);
-		sendRow.add(sendButton, BorderLayout.EAST);
+		sendRow.add(sendButtons, BorderLayout.EAST);
 
 		add(topContainer, BorderLayout.NORTH);
 		add(scrollPane, BorderLayout.CENTER);
@@ -368,10 +380,17 @@ public class TwitchSidePanel extends PluginPanel
 			messageListPanel.revalidate();
 			messageListPanel.repaint();
 
+			// revalidate() only marks the tree invalid - the actual re-layout (which is
+			// what grows the scrollbar's max to account for the new row) happens later on
+			// the event queue. Reading getMaximum() right after revalidate() picked up the
+			// *previous* max, landing one message short and clipping the newest row until
+			// the user scrolled manually. validate() forces that re-layout synchronously,
+			// so the scrollbar's max is already correct by the time we read it below.
+			scrollPane.validate();
+
 			// Scroll to bottom on every new message - simple v1 behavior, doesn't yet
 			// preserve scroll position if the user has scrolled up to read history.
-			SwingUtilities.invokeLater(() ->
-				scrollPane.getVerticalScrollBar().setValue(scrollPane.getVerticalScrollBar().getMaximum()));
+			scrollPane.getVerticalScrollBar().setValue(scrollPane.getVerticalScrollBar().getMaximum());
 		});
 	}
 
@@ -389,6 +408,24 @@ public class TwitchSidePanel extends PluginPanel
 	public void addSubEvent(TwitchSubEvent event)
 	{
 		subGiftCarousel.addEvent(event);
+	}
+
+	/**
+	 * Shows the emote picker popup, anchored to {@link #emoteButton} - the button that
+	 * requested it. {@code icons} only needs to contain entries for emotes that resolved
+	 * successfully; {@link EmotePickerPopup} skips any emote it can't find an icon for.
+	 */
+	public void showEmotePicker(EmoteSetLoader.Result emotes, Map<String, ImageIcon> icons)
+	{
+		SwingUtilities.invokeLater(() -> EmotePickerPopup.show(emoteButton, emotes, icons, this::insertEmoteText));
+	}
+
+	private void insertEmoteText(String emoteName)
+	{
+		String current = messageField.getText();
+		String withTrailingSpace = current.isEmpty() || current.endsWith(" ") ? current : current + " ";
+		messageField.setText(withTrailingSpace + emoteName + " ");
+		messageField.requestFocusInWindow();
 	}
 
 	/**

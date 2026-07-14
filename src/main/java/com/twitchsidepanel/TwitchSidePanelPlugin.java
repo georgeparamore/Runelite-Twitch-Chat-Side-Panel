@@ -3,6 +3,7 @@ package com.twitchsidepanel;
 import com.google.inject.Provides;
 import com.twitchsidepanel.twitch.BadgeIconCache;
 import com.twitchsidepanel.twitch.EmoteImageCache;
+import com.twitchsidepanel.twitch.EmoteSetLoader;
 import com.twitchsidepanel.twitch.TwitchAuthService;
 import com.twitchsidepanel.twitch.TwitchChatClient;
 import com.twitchsidepanel.twitch.TwitchChatListener;
@@ -65,6 +66,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 	private TwitchChatClient chatClient;
 	private final EmoteImageCache emoteImageCache = new EmoteImageCache();
 	private final BadgeIconCache badgeIconCache = new BadgeIconCache();
+	private final EmoteSetLoader emoteSetLoader = new EmoteSetLoader();
 	private final TwitchAuthService authService = new TwitchAuthService();
 
 	// Twitch's chat gateway NAKs the IRCv3 "echo-message" capability (confirmed live),
@@ -125,6 +127,12 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 			{
 				chatClient.sendMessage(text);
 				echoSentMessageLocally(text);
+			}
+
+			@Override
+			public void onEmotePickerClicked()
+			{
+				loadEmotePicker();
 			}
 		}, config.channel());
 
@@ -260,6 +268,51 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 			"twitch-badge-icons");
 		thread.setDaemon(true);
 		thread.start();
+	}
+
+	/**
+	 * Fetches this channel's available emotes (its own + Twitch's global set) and their
+	 * icons, then hands them to the panel to show as a popup - mirrors the emote button
+	 * next to Twitch's own chat input. Only meaningful once logged in, since both the
+	 * emote-set lookup and badge icons need a user token; the button only exists inside
+	 * the send row, which is itself hidden until then.
+	 */
+	private void loadEmotePicker()
+	{
+		String channel = config.channel().trim();
+		String accessToken = config.accessToken();
+		if (channel.isEmpty() || accessToken.isEmpty())
+		{
+			return;
+		}
+
+		Thread thread = new Thread(() ->
+		{
+			EmoteSetLoader.Result emotes = emoteSetLoader.load(CLIENT_ID, accessToken, channel);
+
+			Map<String, ImageIcon> icons = new HashMap<>();
+			resolveIcons(emotes.channelEmotes, icons);
+			resolveIcons(emotes.globalEmotes, icons);
+
+			if (panel != null)
+			{
+				panel.showEmotePicker(emotes, icons);
+			}
+		}, "twitch-emote-picker");
+		thread.setDaemon(true);
+		thread.start();
+	}
+
+	private void resolveIcons(List<EmoteSetLoader.EmoteInfo> emotes, Map<String, ImageIcon> icons)
+	{
+		for (EmoteSetLoader.EmoteInfo emote : emotes)
+		{
+			ImageIcon icon = emoteImageCache.get(emote.id);
+			if (icon != null)
+			{
+				icons.put(emote.id, icon);
+			}
+		}
 	}
 
 	private void clearLogin()
