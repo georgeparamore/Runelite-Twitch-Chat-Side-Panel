@@ -30,8 +30,13 @@ public class TwitchAuthService
 	private static final String SCOPES = "chat:read chat:edit";
 
 	private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
-	private final Gson gson = new Gson();
+	private final Gson gson;
 	private final AtomicBoolean cancelled = new AtomicBoolean(false);
+
+	public TwitchAuthService(Gson gson)
+	{
+		this.gson = gson;
+	}
 
 	public interface LoginListener
 	{

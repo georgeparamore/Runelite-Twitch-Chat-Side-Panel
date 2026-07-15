@@ -1,5 +1,6 @@
 package com.twitchsidepanel;
 
+import com.google.gson.Gson;
 import com.google.inject.Provides;
 import com.twitchsidepanel.twitch.BadgeIconCache;
 import com.twitchsidepanel.twitch.TwitchAuthService;
@@ -60,11 +61,14 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 	@Inject
 	private ConfigManager configManager;
 
+	@Inject
+	private Gson gson;
+
 	private TwitchSidePanel panel;
 	private NavigationButton navButton;
 	private TwitchChatClient chatClient;
 	private final BadgeIconCache badgeIconCache = new BadgeIconCache();
-	private final TwitchAuthService authService = new TwitchAuthService();
+	private TwitchAuthService authService;
 
 	// Twitch's chat gateway NAKs the IRCv3 "echo-message" capability (confirmed live),
 	// so a message you send is never echoed back over IRC - selfColor/selfBadges (from
@@ -82,6 +86,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 	@Override
 	protected void startUp()
 	{
+		authService = new TwitchAuthService(gson);
 		chatClient = new TwitchChatClient(this);
 
 		panel = new TwitchSidePanel(new TwitchSidePanel.Handlers()
