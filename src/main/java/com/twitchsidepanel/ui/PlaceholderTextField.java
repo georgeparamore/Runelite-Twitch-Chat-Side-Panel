@@ -34,11 +34,9 @@ public class PlaceholderTextField extends JTextField
 		g2.setColor(new Color(0x8a, 0x8a, 0x95));
 		g2.setFont(getFont());
 
-		// Uses the field's margin, not its border insets - the margin is what actually
-		// reserves room for the overlaid emote button here (see the constructor call
-		// site), since border insets would instead push the button's own layout inward.
-		// Clipping to that area means a long placeholder truncates cleanly at the
-		// button's edge instead of drawing underneath it and getting visually cut off.
+		// Uses the field's margin, not its border insets, so the placeholder's clip area
+		// always matches the text's own drawing area regardless of how the field's
+		// padding is configured at the call site.
 		Insets margin = getMargin();
 		g2.setClip(margin.left, 0, Math.max(0, getWidth() - margin.left - margin.right), getHeight());
 

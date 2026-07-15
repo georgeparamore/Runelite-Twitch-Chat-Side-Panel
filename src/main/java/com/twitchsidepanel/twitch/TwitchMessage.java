@@ -14,17 +14,15 @@ public class TwitchMessage
 	public final Color color;
 	public final long receivedAtMillis;
 	public final List<BadgeRef> badges;
-	public final List<EmoteRef> emotes;
 
 	public TwitchMessage(String displayName, String body, Color color, long receivedAtMillis,
-		List<BadgeRef> badges, List<EmoteRef> emotes)
+		List<BadgeRef> badges)
 	{
 		this.displayName = displayName;
 		this.body = body;
 		this.color = color;
 		this.receivedAtMillis = receivedAtMillis;
 		this.badges = badges == null ? Collections.emptyList() : badges;
-		this.emotes = emotes == null ? Collections.emptyList() : emotes;
 	}
 
 	/**
@@ -39,25 +37,6 @@ public class TwitchMessage
 		{
 			this.setId = setId;
 			this.version = version;
-		}
-	}
-
-	/**
-	 * One occurrence of an emote from the IRC {@code emotes} tag, as a position range
-	 * (inclusive) into {@link #body}, measured in UTF-16 code units - the same unit
-	 * Twitch uses when generating the positions.
-	 */
-	public static class EmoteRef
-	{
-		public final String id;
-		public final int start;
-		public final int end;
-
-		public EmoteRef(String id, int start, int end)
-		{
-			this.id = id;
-			this.start = start;
-			this.end = end;
 		}
 	}
 }

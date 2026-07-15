@@ -26,10 +26,10 @@ import javax.swing.text.StyledDocument;
 /**
  * A single chat line, flowing as one continuous wrapped paragraph the way Twitch's own
  * chat renders it - "[badges] Username: message text" all in one JTextPane, rather than a
- * name row stacked above a separate body - with Twitch emotes rendered as inline images.
- * A message that mentions {@code myUsername} is highlighted the way Twitch's own chat
- * highlights mentions, and clicking any username (the sender's, at the start of the line)
- * starts a reply to that person via {@code onUsernameClicked}.
+ * name row stacked above a separate body. A message that mentions {@code myUsername} is
+ * highlighted the way Twitch's own chat highlights mentions, and clicking any username
+ * (the sender's, at the start of the line) starts a reply to that person via
+ * {@code onUsernameClicked}.
  */
 public class ChatMessageRowPanel extends JPanel
 {
@@ -41,7 +41,7 @@ public class ChatMessageRowPanel extends JPanel
 	private static final SimpleDateFormat TIME_FORMAT = new SimpleDateFormat("HH:mm");
 
 	public ChatMessageRowPanel(TwitchMessage message, boolean colorUsernames, boolean showTimestamp,
-		Map<String, ImageIcon> emoteIcons, Map<String, ImageIcon> badgeIcons, String myUsername,
+		Map<String, ImageIcon> badgeIcons, String myUsername,
 		Consumer<String> onUsernameClicked)
 	{
 		setLayout(new BorderLayout());
@@ -61,7 +61,7 @@ public class ChatMessageRowPanel extends JPanel
 			setBorder(BorderFactory.createEmptyBorder(2, 10, 2, 10));
 		}
 
-		JTextPane pane = buildLine(message, colorUsernames, showTimestamp, emoteIcons, badgeIcons, onUsernameClicked);
+		JTextPane pane = buildLine(message, colorUsernames, showTimestamp, badgeIcons, onUsernameClicked);
 		add(pane, BorderLayout.CENTER);
 	}
 
@@ -97,7 +97,7 @@ public class ChatMessageRowPanel extends JPanel
 	}
 
 	private JTextPane buildLine(TwitchMessage message, boolean colorUsernames, boolean showTimestamp,
-		Map<String, ImageIcon> emoteIcons, Map<String, ImageIcon> badgeIcons, Consumer<String> onUsernameClicked)
+		Map<String, ImageIcon> badgeIcons, Consumer<String> onUsernameClicked)
 	{
 		JTextPane pane = new JTextPane();
 		pane.setEditable(false);
@@ -142,7 +142,7 @@ public class ChatMessageRowPanel extends JPanel
 			doc.insertString(doc.getLength(), message.displayName + ": ", nameStyle);
 			nameEnd = nameStart + message.displayName.length();
 
-			insertBodyWithEmotes(pane, doc, message, emoteIcons, bodyStyle);
+			doc.insertString(doc.getLength(), message.body, bodyStyle);
 		}
 		catch (BadLocationException e)
 		{
@@ -160,8 +160,8 @@ public class ChatMessageRowPanel extends JPanel
 	 * Lets clicking the sender's name (the "Username" in "Username: message") start a
 	 * reply to them, the same click-a-name-to-@mention gesture Twitch's own chat offers.
 	 * A hand cursor over the name is the only visual cue since the name is already bold
-	 * and colored - anything more (underline, etc.) would fight the emote/badge icons
-	 * sharing the same line.
+	 * and colored - anything more (underline, etc.) would fight the badge icons sharing
+	 * the same line.
 	 */
 	private void addUsernameClickHandling(JTextPane pane, int nameStart, int nameEnd, String displayName,
 		Consumer<String> onUsernameClicked)
@@ -204,47 +204,5 @@ public class ChatMessageRowPanel extends JPanel
 	{
 		int offset = pane.viewToModel2D(e.getPoint());
 		return offset >= nameStart && offset < nameEnd;
-	}
-
-	private void insertBodyWithEmotes(JTextPane pane, StyledDocument doc, TwitchMessage message,
-		Map<String, ImageIcon> emoteIcons, SimpleAttributeSet bodyStyle) throws BadLocationException
-	{
-		String body = message.body;
-		int cursor = 0;
-
-		for (TwitchMessage.EmoteRef emote : message.emotes)
-		{
-			if (emote.start < cursor || emote.end >= body.length() || emote.start > emote.end)
-			{
-				// Overlapping/out-of-range ranges shouldn't happen from Twitch, but skip
-				// defensively rather than corrupt the rendered message.
-				continue;
-			}
-
-			if (emote.start > cursor)
-			{
-				doc.insertString(doc.getLength(), body.substring(cursor, emote.start), bodyStyle);
-			}
-
-			ImageIcon icon = emoteIcons.get(emote.id);
-			if (icon != null)
-			{
-				pane.setCaretPosition(doc.getLength());
-				pane.insertIcon(icon);
-			}
-			else
-			{
-				// Emote image not available (fetch failed, or not resolved yet) - fall
-				// back to the plain-text emote code so the message still reads.
-				doc.insertString(doc.getLength(), body.substring(emote.start, emote.end + 1), bodyStyle);
-			}
-
-			cursor = emote.end + 1;
-		}
-
-		if (cursor < body.length())
-		{
-			doc.insertString(doc.getLength(), body.substring(cursor), bodyStyle);
-		}
 	}
 }

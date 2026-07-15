@@ -12,7 +12,7 @@ import javax.swing.JButton;
 /**
  * Small icon-only button (an external-link glyph) that opens the configured channel's
  * Twitch page in the system browser. Drawn directly in code rather than shipping a bundled
- * image asset, same approach as {@link TwitchPanelIcon} / {@link EmoteButton}. Stays opaque
+ * image asset, same approach as {@link TwitchPanelIcon}. Stays opaque
  * with a manually painted background matching its surroundings rather than using
  * setContentAreaFilled(false) + setOpaque(false) - that combination renders as literally
  * nothing under RuneLite's runtime LAF (see the same note on {@link PillButton}).

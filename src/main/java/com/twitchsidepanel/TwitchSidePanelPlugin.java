@@ -2,8 +2,6 @@ package com.twitchsidepanel;
 
 import com.google.inject.Provides;
 import com.twitchsidepanel.twitch.BadgeIconCache;
-import com.twitchsidepanel.twitch.EmoteImageCache;
-import com.twitchsidepanel.twitch.EmoteSetLoader;
 import com.twitchsidepanel.twitch.TwitchAuthService;
 import com.twitchsidepanel.twitch.TwitchChannelName;
 import com.twitchsidepanel.twitch.TwitchChatClient;
@@ -14,15 +12,10 @@ import com.twitchsidepanel.ui.TwitchPanelIcon;
 import com.twitchsidepanel.ui.TwitchSidePanel;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import javax.inject.Inject;
 import javax.swing.ImageIcon;
 import net.runelite.client.config.ConfigManager;
@@ -70,9 +63,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 	private TwitchSidePanel panel;
 	private NavigationButton navButton;
 	private TwitchChatClient chatClient;
-	private final EmoteImageCache emoteImageCache = new EmoteImageCache();
 	private final BadgeIconCache badgeIconCache = new BadgeIconCache();
-	private final EmoteSetLoader emoteSetLoader = new EmoteSetLoader();
 	private final TwitchAuthService authService = new TwitchAuthService();
 
 	// Twitch's chat gateway NAKs the IRCv3 "echo-message" capability (confirmed live),
@@ -81,24 +72,6 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 	// copy of a sent message look the same as if it had arrived from the server.
 	private volatile Color selfColor;
 	private volatile List<TwitchMessage.BadgeRef> selfBadges = Collections.emptyList();
-
-	// Emote name -> id, for matching emotes typed into a message you send yourself (see
-	// echoSentMessageLocally). Twitch's echo-message NAK means we never get told which
-	// parts of our own sent text are emotes the way incoming messages' "emotes" IRC tag
-	// tells us - the recipient's own client resolves that server-side. Keeping our own
-	// name lookup, refreshed on login and whenever the emote picker is opened, lets local
-	// echo render emotes the same way instead of just showing their plain text code.
-	private volatile Map<String, String> knownEmoteNameToId = Collections.emptyMap();
-
-	// Cached result of the last successful emote-set fetch, so opening the picker more
-	// than once per session doesn't re-run three sequential Helix calls (own user id,
-	// broadcaster id, entitled emotes) every single click - that round trip was the
-	// "takes a while to load, works right after" delay being seen, since the very first
-	// open (or one shortly after connecting/logging in) always paid that cost fresh.
-	// Entitlement essentially never changes mid-session, so serving the cached result
-	// instead of always re-fetching is a safe tradeoff.
-	private volatile EmoteSetLoader.Result cachedEmoteSet;
-	private volatile Map<String, ImageIcon> cachedEmoteIcons = Collections.emptyMap();
 
 	@Provides
 	TwitchSidePanelConfig getConfig(final ConfigManager configManager)
@@ -151,12 +124,6 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 			{
 				chatClient.sendMessage(text);
 				echoSentMessageLocally(text);
-			}
-
-			@Override
-			public void onEmotePickerClicked()
-			{
-				loadEmotePicker();
 			}
 		}, TwitchChannelName.normalize(config.channel()));
 
@@ -234,7 +201,6 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 					panel.showLoggedIn(username);
 				}
 				loadBadgeIcons(accessToken);
-				loadEmoteSet(accessToken, null);
 			}
 
 			@Override
@@ -271,7 +237,6 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 				configManager.setConfiguration(CONFIG_GROUP, "loggedInUsername", username);
 				panel.showLoggedIn(username);
 				loadBadgeIcons(accessToken);
-				loadEmoteSet(accessToken, null);
 			}
 			else
 			{
@@ -296,113 +261,10 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 		thread.start();
 	}
 
-	/**
-	 * Shows the picker popup - mirrors the emote button next to Twitch's own chat input.
-	 * Only meaningful once logged in, since the button only exists inside the send row,
-	 * which is itself hidden until then. Serves the cached emote set instantly if one's
-	 * already been fetched this session (see {@link #cachedEmoteSet}); only hits the
-	 * network the first time, or if that initial fetch hasn't finished yet.
-	 */
-	private void loadEmotePicker()
-	{
-		EmoteSetLoader.Result cached = cachedEmoteSet;
-		if (cached != null)
-		{
-			if (panel != null)
-			{
-				panel.showEmotePicker(cached, cachedEmoteIcons);
-			}
-			return;
-		}
-
-		loadEmoteSet(config.accessToken(), emotes ->
-		{
-			if (panel != null)
-			{
-				panel.showEmotePicker(emotes, cachedEmoteIcons);
-			}
-		});
-	}
-
-	/**
-	 * Fetches this channel's available emotes (its own + Twitch's global set), remembers
-	 * their name -> id mapping for {@link #resolveLocalEmotes} and caches the result (see
-	 * {@link #cachedEmoteSet}), in addition to whatever {@code onLoaded} does with the
-	 * result (e.g. showing the picker popup - {@code onLoaded} may be null when this is
-	 * only warming the cache, such as right after login). Needs a user token, same as
-	 * badge icons.
-	 */
-	private void loadEmoteSet(String accessToken, Consumer<EmoteSetLoader.Result> onLoaded)
-	{
-		String channel = TwitchChannelName.normalize(config.channel());
-		if (channel.isEmpty() || accessToken.isEmpty())
-		{
-			return;
-		}
-
-		Thread thread = new Thread(() ->
-		{
-			EmoteSetLoader.Result emotes = emoteSetLoader.load(CLIENT_ID, accessToken, channel);
-			rememberEmoteNames(emotes);
-
-			Map<String, ImageIcon> icons = new ConcurrentHashMap<>();
-			resolveIcons(emotes.channelEmotes, icons);
-			resolveIcons(emotes.globalEmotes, icons);
-			cachedEmoteIcons = icons;
-			cachedEmoteSet = emotes;
-
-			if (onLoaded != null)
-			{
-				onLoaded.accept(emotes);
-			}
-		}, "twitch-emote-set");
-		thread.setDaemon(true);
-		thread.start();
-	}
-
-	private void rememberEmoteNames(EmoteSetLoader.Result emotes)
-	{
-		Map<String, String> names = new HashMap<>();
-		for (EmoteSetLoader.EmoteInfo emote : emotes.channelEmotes)
-		{
-			names.put(emote.name, emote.id);
-		}
-		for (EmoteSetLoader.EmoteInfo emote : emotes.globalEmotes)
-		{
-			names.put(emote.name, emote.id);
-		}
-		knownEmoteNameToId = names;
-	}
-
-	/**
-	 * Resolves an icon for every emote in {@code emotes}, in parallel - a channel's emote
-	 * set can easily run into the dozens, and {@link EmoteImageCache#get} blocks on a
-	 * network fetch for each one not already cached, so doing this sequentially was the
-	 * main source of the picker feeling slow to open the first time each session (later
-	 * opens are instant, served from {@link #cachedEmoteSet}/{@link #cachedEmoteIcons}).
-	 * {@code icons} must be a thread-safe map (a {@link ConcurrentHashMap}).
-	 */
-	private void resolveIcons(List<EmoteSetLoader.EmoteInfo> emotes, Map<String, ImageIcon> icons)
-	{
-		emotes.parallelStream().forEach(emote ->
-		{
-			ImageIcon icon = emoteImageCache.get(emote.id);
-			if (icon != null)
-			{
-				icons.put(emote.id, icon);
-			}
-		});
-	}
-
 	private void clearLogin()
 	{
 		configManager.unsetConfiguration(CONFIG_GROUP, "accessToken");
 		configManager.unsetConfiguration(CONFIG_GROUP, "loggedInUsername");
-		// Otherwise a different account logging in afterward would see the previous
-		// account's cached entitled emotes until the picker happened to be reopened.
-		cachedEmoteSet = null;
-		cachedEmoteIcons = Collections.emptyMap();
-		knownEmoteNameToId = Collections.emptyMap();
 	}
 
 	@Subscribe
@@ -493,67 +355,23 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 		}
 
 		Thread thread = new Thread(() ->
-			renderMessage(new TwitchMessage(username, text, selfColor, System.currentTimeMillis(),
-				selfBadges, resolveLocalEmotes(text))),
+			renderMessage(new TwitchMessage(username, text, selfColor, System.currentTimeMillis(), selfBadges)),
 			"twitch-local-echo");
 		thread.setDaemon(true);
 		thread.start();
 	}
 
 	/**
-	 * Finds emote codes in a message you're about to locally echo, using
-	 * {@link #knownEmoteNameToId} - a message you send never comes back over IRC with its
-	 * own {@code emotes} tag the way an incoming one does, so without this every emote
-	 * you typed would render as its plain text code instead of an icon. Only ever matches
-	 * emotes you're actually entitled to use (that's what populates the cache - see
-	 * {@link #rememberEmoteNames}), so a tier-locked emote you typed by hand falls back to
-	 * plain text here too, the same as what Twitch itself will actually render for it.
-	 */
-	private List<TwitchMessage.EmoteRef> resolveLocalEmotes(String text)
-	{
-		Map<String, String> names = knownEmoteNameToId;
-		if (names.isEmpty())
-		{
-			return Collections.emptyList();
-		}
-
-		List<TwitchMessage.EmoteRef> emotes = new ArrayList<>();
-		Matcher matcher = Pattern.compile("\\S+").matcher(text);
-		while (matcher.find())
-		{
-			String id = names.get(matcher.group());
-			if (id != null)
-			{
-				emotes.add(new TwitchMessage.EmoteRef(id, matcher.start(), matcher.end() - 1));
-			}
-		}
-		return emotes;
-	}
-
-	/**
-	 * Resolves emote/badge icons (blocking on a network fetch for any not already
-	 * cached) and hands the message off to the panel to render. Must be called from a
-	 * background thread, never the Swing EDT - {@code onMessage} already runs on the
-	 * WebSocket listener's thread, and {@link #echoSentMessageLocally} hops onto one.
+	 * Resolves badge icons (blocking on a network fetch for any not already cached) and
+	 * hands the message off to the panel to render. Must be called from a background
+	 * thread, never the Swing EDT - {@code onMessage} already runs on the WebSocket
+	 * listener's thread, and {@link #echoSentMessageLocally} hops onto one.
 	 */
 	private void renderMessage(TwitchMessage message)
 	{
 		if (panel == null)
 		{
 			return;
-		}
-
-		Map<String, ImageIcon> emoteIcons = new HashMap<>();
-		for (TwitchMessage.EmoteRef emote : message.emotes)
-		{
-			if (!emoteIcons.containsKey(emote.id))
-			{
-				ImageIcon icon = emoteImageCache.get(emote.id);
-				if (icon != null)
-				{
-					emoteIcons.put(emote.id, icon);
-				}
-			}
 		}
 
 		Map<String, ImageIcon> badgeIcons = new HashMap<>();
@@ -571,6 +389,6 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 		}
 
 		panel.appendMessage(message, config.colorUsernames(), config.showTimestamps(), config.maxMessages(),
-			emoteIcons, badgeIcons);
+			badgeIcons);
 	}
 }

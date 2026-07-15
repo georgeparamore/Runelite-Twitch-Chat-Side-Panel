@@ -23,7 +23,7 @@ import java.util.concurrent.CompletionStage;
  * account so {@link #sendMessage(String)} can post to chat.
  * <p>
  * Either way it requests the IRCv3 "tags" capability so each message carries the
- * sender's chosen display name, name color, badges, and emotes.
+ * sender's chosen display name, name color, and badges.
  */
 public class TwitchChatClient
 {
@@ -369,9 +369,8 @@ public class TwitchChatClient
 
 		Color color = parseColor(tags.get("color"));
 		List<TwitchMessage.BadgeRef> badges = parseBadges(tags.get("badges"));
-		List<TwitchMessage.EmoteRef> emotes = parseEmotes(tags.get("emotes"));
 
-		return new TwitchMessage(displayName, body, color, System.currentTimeMillis(), badges, emotes);
+		return new TwitchMessage(displayName, body, color, System.currentTimeMillis(), badges);
 	}
 
 	/**
@@ -393,49 +392,6 @@ public class TwitchChatClient
 			}
 		}
 		return badges;
-	}
-
-	/**
-	 * Parses the {@code emotes} tag, e.g. {@code 25:0-4,12-16/1902:6-10} - each entry is
-	 * an emote id followed by one or more start-end character ranges where it appears.
-	 */
-	private List<TwitchMessage.EmoteRef> parseEmotes(String raw)
-	{
-		List<TwitchMessage.EmoteRef> emotes = new ArrayList<>();
-		if (raw == null || raw.isEmpty())
-		{
-			return emotes;
-		}
-		for (String entry : raw.split("/"))
-		{
-			int colon = entry.indexOf(':');
-			if (colon <= 0)
-			{
-				continue;
-			}
-			String id = entry.substring(0, colon);
-			for (String range : entry.substring(colon + 1).split(","))
-			{
-				int dash = range.indexOf('-');
-				if (dash <= 0)
-				{
-					continue;
-				}
-				try
-				{
-					int start = Integer.parseInt(range.substring(0, dash));
-					int end = Integer.parseInt(range.substring(dash + 1));
-					emotes.add(new TwitchMessage.EmoteRef(id, start, end));
-				}
-				catch (NumberFormatException ignored)
-				{
-					// Malformed range from a source we don't control - skip it rather
-					// than fail the whole message.
-				}
-			}
-		}
-		emotes.sort((a, b) -> Integer.compare(a.start, b.start));
-		return emotes;
 	}
 
 	private String extractNickFromPrefix(String prefixSection)

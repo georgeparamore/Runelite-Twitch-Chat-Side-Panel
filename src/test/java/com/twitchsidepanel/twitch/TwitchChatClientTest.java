@@ -9,8 +9,8 @@ import org.junit.Test;
  * Verifies USERNOTICE parsing against real-shaped tag lines. There's no practical way to
  * trigger a real sub/gift event live against this codebase's test channel, so this is the
  * substitute for that - lines below are built from Twitch's documented USERNOTICE tag
- * format, cross-checked against the badges/emotes/USERSTATE tags already confirmed live
- * in production traffic.
+ * format, cross-checked against the badges/USERSTATE tags already confirmed live in
+ * production traffic.
  */
 public class TwitchChatClientTest
 {

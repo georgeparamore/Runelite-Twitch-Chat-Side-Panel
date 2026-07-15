@@ -19,10 +19,9 @@ import javax.swing.ImageIcon;
 
 /**
  * Fetches and caches Twitch chat badge icons (moderator, subscriber, vip, etc.) for a
- * channel. Unlike emotes, this needs an authenticated Helix API call (Client ID + user
- * OAuth token) - so badge icons only render once the user has logged in. Badge *names*
- * still arrive over IRC even for anonymous connections; this only concerns fetching the
- * icon images to go with them.
+ * channel. Needs an authenticated Helix API call (Client ID + user OAuth token) - so badge
+ * icons only render once the user has logged in. Badge *names* still arrive over IRC even
+ * for anonymous connections; this only concerns fetching the icon images to go with them.
  */
 public class BadgeIconCache
 {

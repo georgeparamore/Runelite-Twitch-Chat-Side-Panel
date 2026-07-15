@@ -1,6 +1,5 @@
 package com.twitchsidepanel.ui;
 
-import com.twitchsidepanel.twitch.EmoteSetLoader;
 import com.twitchsidepanel.twitch.TwitchMessage;
 import com.twitchsidepanel.twitch.TwitchSubEvent;
 import java.awt.BorderLayout;
@@ -20,13 +19,10 @@ import javax.swing.BoxLayout;
 import javax.swing.ImageIcon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.Scrollable;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
-import javax.swing.event.PopupMenuEvent;
-import javax.swing.event.PopupMenuListener;
 import java.awt.Rectangle;
 import net.runelite.client.ui.PluginPanel;
 
@@ -55,8 +51,6 @@ public class TwitchSidePanel extends PluginPanel
 		void onLogoutClicked();
 
 		void onSendMessage(String text);
-
-		void onEmotePickerClicked();
 	}
 
 	private enum AuthState
@@ -83,7 +77,6 @@ public class TwitchSidePanel extends PluginPanel
 	private final JPanel messageListPanel;
 	private final JScrollPane scrollPane;
 	private final PlaceholderTextField messageField;
-	private final EmoteButton emoteButton;
 	private final PillButton sendButton;
 	private final JPanel sendRow;
 
@@ -93,11 +86,6 @@ public class TwitchSidePanel extends PluginPanel
 	private AuthState authState = AuthState.LOGGED_OUT;
 	private volatile String myUsername;
 	private volatile String currentChannel = "";
-
-	// The currently-open emote picker popup, if any - lets a second click on the emote
-	// button close it again instead of always opening a new one on top of itself.
-	private JPopupMenu emotePickerPopup;
-	private long emotePickerClosedAtMillis;
 
 	// Most-recently-seen chatters (most recent first), for the "@" mention autocomplete -
 	// capped so a long-running session doesn't grow this unbounded.
@@ -231,34 +219,15 @@ public class TwitchSidePanel extends PluginPanel
 
 		// The side panel is much narrower than Twitch's own chat box, which is where the
 		// full "Send a message" wording comes from - shortened so it reliably fits
-		// alongside the embedded emote button and the "Chat" send button without clipping.
+		// alongside the "Chat" send button without clipping.
 		messageField = new PlaceholderTextField("Message");
 		messageField.setBackground(fieldBackground);
 		messageField.setForeground(Color.WHITE);
 		messageField.setCaretColor(Color.WHITE);
-		// Deliberately using setMargin() here, not setBorder() - a Border's insets are
-		// what BorderLayout consults to place child components, so reserving the emote
-		// button's space via the field's *border* was also pushing the button itself
-		// inward by that same amount, leaving a visible gap before the field's true right
-		// edge instead of sitting flush in the corner like Twitch's own embedded button.
-		// Margin only affects the text's own drawing area, leaving layout untouched.
 		messageField.setBorder(BorderFactory.createEmptyBorder());
-		messageField.setMargin(new Insets(6, 10, 6, 26));
+		messageField.setMargin(new Insets(6, 10, 6, 10));
 		messageField.addActionListener(e -> handleSend());
 		new MentionAutocomplete(messageField, () -> recentUsernames);
-
-		emoteButton = new EmoteButton(fieldBackground);
-		emoteButton.addActionListener(e -> handleEmoteButton());
-
-		// Twitch's own chat box embeds its emote button inside the input field itself,
-		// at its right edge, rather than as a separate control taking up its own row
-		// width. OverlayLayout was tried first for this but didn't position the button
-		// correctly in practice; adding the button as a direct child of the text field
-		// is a well-worn, reliable Swing trick instead - JTextField is itself a
-		// Container, so a normal BorderLayout.EAST child renders on top of the field's
-		// own text painting without disturbing it.
-		messageField.setLayout(new BorderLayout());
-		messageField.add(emoteButton, BorderLayout.EAST);
 
 		sendButton = new PillButton("Chat", ACCENT, ACCENT_HOVER);
 		sendButton.addActionListener(e -> handleSend());
@@ -311,35 +280,6 @@ public class TwitchSidePanel extends PluginPanel
 			handlers.onSendMessage(text);
 			messageField.setText("");
 		}
-	}
-
-	/**
-	 * Toggles the emote picker: if it's already open, a second click closes it again
-	 * instead of fetching/reopening a new one on top of itself. Otherwise asks the plugin
-	 * to fetch (or serve from cache - see {@link #showEmotePicker}) and show it.
-	 * <p>
-	 * A JPopupMenu auto-dismisses itself on any click outside its own bounds - including a
-	 * click back on the button that opened it - and that dismissal runs as part of mouse
-	 * *press* handling, before this button's own click action fires on mouse *release*. So
-	 * by the time this method's {@code isVisible()} check runs, Swing has already closed
-	 * the popup, and without the timestamp check below every "close" click would look
-	 * identical to "never opened" and just reopen it. {@link #emotePickerClosedAtMillis} is
-	 * stamped by a listener on the popup itself (see {@link #showEmotePicker}) the instant
-	 * that auto-dismissal happens, so a click within the same short window is treated as
-	 * the close it actually was.
-	 */
-	private void handleEmoteButton()
-	{
-		if (emotePickerPopup != null && emotePickerPopup.isVisible())
-		{
-			emotePickerPopup.setVisible(false);
-			return;
-		}
-		if (System.currentTimeMillis() - emotePickerClosedAtMillis < 250)
-		{
-			return;
-		}
-		handlers.onEmotePickerClicked();
 	}
 
 	/**
@@ -469,14 +409,14 @@ public class TwitchSidePanel extends PluginPanel
 	}
 
 	public void appendMessage(TwitchMessage message, boolean colorUsernames, boolean showTimestamps, int maxMessages,
-		Map<String, ImageIcon> emoteIcons, Map<String, ImageIcon> badgeIcons)
+		Map<String, ImageIcon> badgeIcons)
 	{
 		SwingUtilities.invokeLater(() ->
 		{
 			recordUsername(message.displayName);
 
 			ChatMessageRowPanel row = new ChatMessageRowPanel(message, colorUsernames, showTimestamps,
-				emoteIcons, badgeIcons, myUsername, this::startReplyTo);
+				badgeIcons, myUsername, this::startReplyTo);
 			insertRow(row);
 
 			while (messageListPanel.getComponentCount() - 1 > maxMessages)
@@ -539,45 +479,6 @@ public class TwitchSidePanel extends PluginPanel
 	public void addSubEvent(TwitchSubEvent event)
 	{
 		subGiftCarousel.addEvent(event);
-	}
-
-	/**
-	 * Shows the emote picker popup, anchored to {@link #emoteButton} - the button that
-	 * requested it. {@code icons} only needs to contain entries for emotes that resolved
-	 * successfully; {@link EmotePickerPopup} skips any emote it can't find an icon for.
-	 */
-	public void showEmotePicker(EmoteSetLoader.Result emotes, Map<String, ImageIcon> icons)
-	{
-		SwingUtilities.invokeLater(() ->
-		{
-			emotePickerPopup = EmotePickerPopup.show(emoteButton, emotes, icons, this::insertEmoteText);
-			emotePickerPopup.addPopupMenuListener(new PopupMenuListener()
-			{
-				@Override
-				public void popupMenuWillBecomeInvisible(PopupMenuEvent e)
-				{
-					emotePickerClosedAtMillis = System.currentTimeMillis();
-				}
-
-				@Override
-				public void popupMenuWillBecomeVisible(PopupMenuEvent e)
-				{
-				}
-
-				@Override
-				public void popupMenuCanceled(PopupMenuEvent e)
-				{
-				}
-			});
-		});
-	}
-
-	private void insertEmoteText(String emoteName)
-	{
-		String current = messageField.getText();
-		String withTrailingSpace = current.isEmpty() || current.endsWith(" ") ? current : current + " ";
-		messageField.setText(withTrailingSpace + emoteName + " ");
-		messageField.requestFocusInWindow();
 	}
 
 	/**

@@ -22,9 +22,7 @@ setup needed, just click **Log in with Twitch**.
    the channel name opens that channel's Twitch page in your browser.
 3. To also send messages, click **Log in with Twitch** in the panel and follow the
    code/link it shows you (it also tries to open your browser to it automatically). Once
-   logged in, a message box appears at the bottom of the panel, with an emote button
-   embedded in its right edge - just like Twitch's own chat box - click it to browse and
-   insert emotes you're entitled to use in that channel, plus Twitch's global set.
+   logged in, a message box appears at the bottom of the panel to type and send from.
 
 If no channel is configured, the panel shows "No channel set" and the Connect button is
 disabled until you set one.
@@ -46,13 +44,8 @@ allows read-only access with no OAuth token, as long as the connecting nick foll
 over raw IRC sockets (`irc.chat.twitch.tv:6697`) specifically because it also works on
 networks that only allow outbound HTTPS - hotel wifi, corporate proxies, etc. The plugin
 requests the IRCv3 `tags` capability so each message carries the sender's display name,
-chat color, badges, and emotes. See `TwitchChatClient`, built on
-`java.net.http.HttpClient`'s WebSocket API (JDK 11+, no extra dependency).
-
-**Emotes**: rendered as real inline images, not text - fetched from Twitch's
-unauthenticated emote CDN by id (from the `emotes` IRC tag) and downscaled to a fixed
-20px height so they sit inline with the message text. See `EmoteImageCache` /
-`ChatMessageRowPanel`.
+chat color, and badges. See `TwitchChatClient`, built on `java.net.http.HttpClient`'s
+WebSocket API (JDK 11+, no extra dependency).
 
 **Login / sending**: uses OAuth 2.0's Device Code Grant (`TwitchAuthService`) - you're
 shown a short code and told to enter it at a URL in any browser (which the plugin also
@@ -77,21 +70,6 @@ the "@", case-insensitive) is highlighted the way Twitch's own chat highlights m
 Clicking any sender's name in the feed starts a reply to them by setting the message field
 to "@Username " - the same click-to-@mention gesture Twitch's chat offers. See
 `ChatMessageRowPanel`.
-
-**Emote picker**: the emote button, overlaid inside the message field's own right edge
-(`OverlayLayout` stacking it on top of the field rather than as a separate control taking
-up its own row width - the same embedded placement Twitch's own chat box uses), fetches
-only the emotes you're actually entitled to use in the current channel - Twitch's global
-set plus that channel's subscriber/follower emotes, filtered by your real subscription
-tier - via Helix's "Get User Emotes" (`GET /helix/chat/emotes/user?user_id=...&broadcaster_id=...`),
-and shows them as a scrollable icon grid, split into "Channel emotes" / "Global emotes"
-sections - click one to insert its text code into the message field. This is deliberately
-not "Get Channel Emotes", which returns a channel's entire emote set with no regard for
-whether you can actually use any given one - picking a tier-locked emote from that would
-just post its plain text code, since Twitch itself won't render an emote you're not
-entitled to. Needs a login the same as sending messages does, plus the `user:read:emotes`
-scope; the icons themselves reuse `EmoteImageCache`, the same cache that renders emotes
-inline in chat messages. See `EmoteSetLoader` / `EmotePickerPopup` / `EmoteButton`.
 
 **Channel URLs in config**: the "Twitch channel" setting accepts a pasted full twitch.tv
 URL (with or without a protocol, trailing path like `/videos`, or query string) as well as
@@ -141,8 +119,6 @@ the maintainer's real Mac), a real registered Twitch application, and a real Twi
 account:
 
 - Chat feed renders correctly against a live channel - display names/colors/timestamps.
-- Emotes render as real inline images (initially discovered they were rendering at their
-  native 56x56 size and blowing up row heights - fixed by downscaling to 20px).
 - OAuth device-code login completed for real: code issued, approved in a real browser,
   token retrieved, username validated ("Logged in as ...") - not just the error path.
 - Token persistence confirmed - restarting the client silently logged back in from the
@@ -153,7 +129,7 @@ account:
   real message (confirmed with a broadcaster badge).
 
 This live testing (including on a real Mac, not just headless sandbox testing) caught and
-fixed eleven real bugs before they reached most users:
+fixed eight real bugs before they reached most users:
 
 1. The original raw-IRC-socket transport (`irc.chat.twitch.tv:6697`) had no connect
    timeout, so an unreachable network left the panel stuck on "Connecting..." forever.
@@ -208,46 +184,6 @@ fixed eleven real bugs before they reached most users:
    `getBackground()`, never the accent color passed into the constructor), silently
    painting over the rounded purple fill with a flat rectangular default-gray one. Fixed
    by painting the button's text directly instead of delegating to the look-and-feel.
-9. A message you sent yourself always showed its emotes as plain text codes instead of
-   icons, even ones the emote picker had just been used to insert - only messages from
-   other people rendered emote icons. Root cause: Twitch's `emotes` IRC tag (the thing
-   that tells the chat feed which parts of a message are emotes, and where) only arrives
-   on incoming messages; a message you send is never echoed back over IRC at all (see the
-   `echo-message` NAK above), so the local echo had no positions to work with and fell
-   back to plain text for the whole message. Fixed by having the plugin remember its own
-   name -> id map of emotes you're entitled to use (the same data the picker already
-   fetches) and matching your sent text against it locally before rendering the echo.
-10. The emote picker originally listed a channel's *entire* emote set (via Helix's "Get
-    Channel Emotes"), including subscriber-tier emotes regardless of whether you were
-    actually subscribed at that tier - so picking and sending one just posted its plain
-    text code, since Twitch itself won't render an emote you're not entitled to use,
-    plugin or not. Fixed by switching to "Get User Emotes", which factors in your real
-    subscription status server-side and only returns emotes you can actually use. This
-    needed a new OAuth scope (`user:read:emotes`), so anyone logged in before this change
-    needs to log out and back in once for the picker (and matching local-echo icons) to
-    work again.
-11. Clicking the emote button always opened a fresh picker on top of whatever was already
-    there instead of toggling it closed on a second click, and opening it felt slow. Two
-    separate causes:
-    - Every click re-ran three sequential Helix calls (own user id, broadcaster id,
-      entitled emotes) with no memory of the last result. Fixed by caching the last
-      successful fetch for the session (entitlement essentially never changes
-      mid-session), so only the first open (or one that beats the login-time warm-up
-      fetch) pays that cost.
-    - The toggle "fix" that added a currently-open-popup check didn't actually work:
-      `JPopupMenu` auto-dismisses on any outside click - including a click back on the
-      button that opened it - and that dismissal happens on mouse *press*, before the
-      button's own click action fires on mouse *release*. So by the time the check ran,
-      Swing had already closed the popup, and every "close" click looked identical to
-      "never opened" and just reopened it. Fixed with a listener on the popup that
-      stamps the moment it auto-dismisses, so a click within a short window afterward is
-      treated as the close it actually was rather than a new open.
-    - Separately, the picker resolved an icon for every emote in the channel's set
-      sequentially - one blocking network fetch at a time - before showing anything,
-      which could mean dozens of sequential round trips for a channel with a large emote
-      set. Parallelized via `parallelStream()` so this only bottlenecks on the slowest
-      single fetch instead of the sum of all of them.
-
 The sub/gift carousel's `USERNOTICE` parsing (`parseUserNotice`) is covered by 7 unit
 tests (`TwitchChatClientTest`) built from Twitch's documented tag format, since there's
 no practical way to trigger a real sub/gift event live without spending real money -
