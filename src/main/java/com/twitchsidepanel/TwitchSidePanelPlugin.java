@@ -39,8 +39,7 @@ import net.runelite.client.ui.NavigationButton;
 @PluginDescriptor(
 	name = "Twitch Chat Side Panel",
 	description = "Shows your Twitch channel's chat in a side panel instead of the chatbox PM format",
-	tags = {"twitch", "chat", "stream", "panel"},
-	enabledByDefault = false
+	tags = {"twitch", "chat", "stream", "panel"}
 )
 public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 {
