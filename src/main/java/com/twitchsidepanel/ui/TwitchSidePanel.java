@@ -409,14 +409,14 @@ public class TwitchSidePanel extends PluginPanel
 	}
 
 	public void appendMessage(TwitchMessage message, boolean colorUsernames, boolean showTimestamps, int maxMessages,
-		Map<String, ImageIcon> badgeIcons)
+		float fontSize, Map<String, ImageIcon> badgeIcons)
 	{
 		SwingUtilities.invokeLater(() ->
 		{
 			recordUsername(message.displayName);
 
 			ChatMessageRowPanel row = new ChatMessageRowPanel(message, colorUsernames, showTimestamps,
-				badgeIcons, myUsername, this::startReplyTo);
+				fontSize, badgeIcons, myUsername, this::startReplyTo);
 			insertRow(row);
 
 			while (messageListPanel.getComponentCount() - 1 > maxMessages)

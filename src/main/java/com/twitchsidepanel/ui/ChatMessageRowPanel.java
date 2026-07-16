@@ -41,7 +41,7 @@ public class ChatMessageRowPanel extends JPanel
 	private static final SimpleDateFormat TIME_FORMAT = new SimpleDateFormat("HH:mm");
 
 	public ChatMessageRowPanel(TwitchMessage message, boolean colorUsernames, boolean showTimestamp,
-		Map<String, ImageIcon> badgeIcons, String myUsername,
+		float fontSize, Map<String, ImageIcon> badgeIcons, String myUsername,
 		Consumer<String> onUsernameClicked)
 	{
 		setLayout(new BorderLayout());
@@ -61,7 +61,7 @@ public class ChatMessageRowPanel extends JPanel
 			setBorder(BorderFactory.createEmptyBorder(2, 10, 2, 10));
 		}
 
-		JTextPane pane = buildLine(message, colorUsernames, showTimestamp, badgeIcons, onUsernameClicked);
+		JTextPane pane = buildLine(message, colorUsernames, showTimestamp, fontSize, badgeIcons, onUsernameClicked);
 		add(pane, BorderLayout.CENTER);
 	}
 
@@ -97,13 +97,13 @@ public class ChatMessageRowPanel extends JPanel
 	}
 
 	private JTextPane buildLine(TwitchMessage message, boolean colorUsernames, boolean showTimestamp,
-		Map<String, ImageIcon> badgeIcons, Consumer<String> onUsernameClicked)
+		float fontSize, Map<String, ImageIcon> badgeIcons, Consumer<String> onUsernameClicked)
 	{
 		JTextPane pane = new JTextPane();
 		pane.setEditable(false);
 		pane.setOpaque(false);
 		pane.setBorder(null);
-		pane.setFont(pane.getFont().deriveFont(12f));
+		pane.setFont(pane.getFont().deriveFont(fontSize));
 
 		StyledDocument doc = pane.getStyledDocument();
 

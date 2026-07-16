@@ -389,6 +389,6 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 		}
 
 		panel.appendMessage(message, config.colorUsernames(), config.showTimestamps(), config.maxMessages(),
-			badgeIcons);
+			config.textSize().points(), badgeIcons);
 	}
 }
