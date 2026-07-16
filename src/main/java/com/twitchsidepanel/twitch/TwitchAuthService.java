@@ -11,6 +11,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -31,11 +33,13 @@ public class TwitchAuthService
 
 	private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 	private final Gson gson;
+	private final ScheduledExecutorService executor;
 	private final AtomicBoolean cancelled = new AtomicBoolean(false);
 
-	public TwitchAuthService(Gson gson)
+	public TwitchAuthService(Gson gson, ScheduledExecutorService executor)
 	{
 		this.gson = gson;
+		this.executor = executor;
 	}
 
 	public interface LoginListener
@@ -55,16 +59,14 @@ public class TwitchAuthService
 	}
 
 	/**
-	 * Starts a login attempt on a background thread. Only one attempt should be in
-	 * flight at a time - call {@link #cancel()} first if a previous attempt is still
+	 * Starts a login attempt on the client's shared executor. Only one attempt should be
+	 * in flight at a time - call {@link #cancel()} first if a previous attempt is still
 	 * polling.
 	 */
 	public void startLogin(String clientId, LoginListener listener)
 	{
 		cancelled.set(false);
-		Thread thread = new Thread(() -> runLogin(clientId, listener), "twitch-oauth-device-flow");
-		thread.setDaemon(true);
-		thread.start();
+		executor.execute(() -> runLogin(clientId, listener));
 	}
 
 	public void cancel()
@@ -95,14 +97,16 @@ public class TwitchAuthService
 
 			listener.onCodeReady(userCode, verificationUri);
 			openInBrowser(verificationUri);
-			pollForToken(clientId, deviceCode, expiresInSeconds, intervalSeconds, listener);
+
+			long deadline = System.currentTimeMillis() + expiresInSeconds * 1000L;
+			schedulePoll(clientId, deviceCode, deadline, intervalSeconds, listener, intervalSeconds);
 		}
 		catch (Exception e)
 		{
-			// Deliberately broad: this runs on its own background thread with no
-			// uncaught-exception handler, so anything narrower risks the thread dying
-			// silently on a response shaped differently than expected - "nothing
-			// happens" when you click the button, with no error and nothing to debug.
+			// Deliberately broad: this runs on the executor with no uncaught-exception
+			// handler, so anything narrower risks the task dying silently on a response
+			// shaped differently than expected - "nothing happens" when you click the
+			// button, with no error and nothing to debug.
 			if (!cancelled.get())
 			{
 				listener.onError("Login error: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
@@ -130,20 +134,32 @@ public class TwitchAuthService
 		}
 	}
 
-	private void pollForToken(String clientId, String deviceCode, int expiresInSeconds, int intervalSeconds,
-		LoginListener listener) throws IOException, InterruptedException
+	/**
+	 * Schedules the next poll attempt {@code delaySeconds} from now on the client's shared
+	 * executor, rather than blocking a thread on {@code Thread.sleep} between attempts.
+	 */
+	private void schedulePoll(String clientId, String deviceCode, long deadlineMillis, int intervalSeconds,
+		LoginListener listener, int delaySeconds)
 	{
-		long deadline = System.currentTimeMillis() + expiresInSeconds * 1000L;
-		int interval = intervalSeconds;
+		executor.schedule(() -> pollForToken(clientId, deviceCode, deadlineMillis, intervalSeconds, listener),
+			delaySeconds, TimeUnit.SECONDS);
+	}
 
-		while (!cancelled.get() && System.currentTimeMillis() < deadline)
+	private void pollForToken(String clientId, String deviceCode, long deadlineMillis, int intervalSeconds,
+		LoginListener listener)
+	{
+		if (cancelled.get())
 		{
-			Thread.sleep(interval * 1000L);
-			if (cancelled.get())
-			{
-				return;
-			}
+			return;
+		}
+		if (System.currentTimeMillis() >= deadlineMillis)
+		{
+			listener.onError("Login code expired - try again");
+			return;
+		}
 
+		try
+		{
 			HttpResponse<String> tokenResponse = post(TOKEN_URL,
 				"client_id=" + urlEncode(clientId)
 					+ "&device_code=" + urlEncode(deviceCode)
@@ -166,21 +182,27 @@ public class TwitchAuthService
 			String message = safeMessage(tokenResponse.body());
 			if ("authorization_pending".equals(message))
 			{
-				continue;
+				schedulePoll(clientId, deviceCode, deadlineMillis, intervalSeconds, listener, intervalSeconds);
+				return;
 			}
 			if ("slow_down".equals(message))
 			{
-				interval += 5;
-				continue;
+				int slowerInterval = intervalSeconds + 5;
+				schedulePoll(clientId, deviceCode, deadlineMillis, slowerInterval, listener, slowerInterval);
+				return;
 			}
 
 			listener.onError("Login failed: " + (message.isEmpty() ? ("HTTP " + tokenResponse.statusCode()) : message));
-			return;
 		}
-
-		if (!cancelled.get())
+		catch (Exception e)
 		{
-			listener.onError("Login code expired - try again");
+			// Same broad-catch reasoning as runLogin() - this callback has no other
+			// safety net, so an unexpected failure should surface a visible error rather
+			// than silently stop polling.
+			if (!cancelled.get())
+			{
+				listener.onError("Login error: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+			}
 		}
 	}
 

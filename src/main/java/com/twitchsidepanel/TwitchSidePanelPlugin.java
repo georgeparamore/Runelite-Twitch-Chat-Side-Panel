@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ScheduledExecutorService;
 import javax.inject.Inject;
 import javax.swing.ImageIcon;
 import net.runelite.client.config.ConfigManager;
@@ -63,6 +64,9 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 	@Inject
 	private Gson gson;
 
+	@Inject
+	private ScheduledExecutorService executor;
+
 	private TwitchSidePanel panel;
 	private NavigationButton navButton;
 	private TwitchChatClient chatClient;
@@ -85,7 +89,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 	@Override
 	protected void startUp()
 	{
-		authService = new TwitchAuthService(gson);
+		authService = new TwitchAuthService(gson, executor);
 		chatClient = new TwitchChatClient(this);
 
 		panel = new TwitchSidePanel(new TwitchSidePanel.Handlers()
@@ -229,7 +233,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 
 		// Validating blocks on a network call - run it off the startUp() thread so
 		// plugin startup itself never stalls waiting on Twitch.
-		Thread thread = new Thread(() ->
+		executor.execute(() ->
 		{
 			String username = authService.validateToken(accessToken);
 			if (panel == null)
@@ -247,9 +251,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 				clearLogin();
 				panel.showLoginPrompt();
 			}
-		}, "twitch-token-validate");
-		thread.setDaemon(true);
-		thread.start();
+		});
 	}
 
 	private void loadBadgeIcons(String accessToken)
@@ -259,10 +261,7 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 		{
 			return;
 		}
-		Thread thread = new Thread(() -> badgeIconCache.loadForChannel(CLIENT_ID, accessToken, channel),
-			"twitch-badge-icons");
-		thread.setDaemon(true);
-		thread.start();
+		executor.execute(() -> badgeIconCache.loadForChannel(CLIENT_ID, accessToken, channel));
 	}
 
 	private void clearLogin()
@@ -358,11 +357,8 @@ public class TwitchSidePanelPlugin extends Plugin implements TwitchChatListener
 			return;
 		}
 
-		Thread thread = new Thread(() ->
-			renderMessage(new TwitchMessage(username, text, selfColor, System.currentTimeMillis(), selfBadges)),
-			"twitch-local-echo");
-		thread.setDaemon(true);
-		thread.start();
+		executor.execute(() ->
+			renderMessage(new TwitchMessage(username, text, selfColor, System.currentTimeMillis(), selfBadges)));
 	}
 
 	/**
