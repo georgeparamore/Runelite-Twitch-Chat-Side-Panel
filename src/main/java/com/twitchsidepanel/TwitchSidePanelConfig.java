@@ -84,11 +84,11 @@ public interface TwitchSidePanelConfig extends Config
 			switch (this)
 			{
 				case SMALL:
-					return 10f;
-				case LARGE:
-					return 15f;
-				default:
 					return 12f;
+				case LARGE:
+					return 16f;
+				default:
+					return 14f;
 			}
 		}
 
